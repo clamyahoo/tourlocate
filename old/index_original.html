@@ -1,0 +1,48 @@
+//OSM-Karte inklusive klickbare Stationen (POIs) mit Nummern, Routing via OSRM, //Export/Import (GeoJSON, GPX/WPT und Ein-Datei-HTML) und Kartenebenen (OSM, Satellit, Topo) mit Layer-Switcher, //Gesamtdistanz und Suchfeld 
+
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tourlocate</title>
+
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-control-geocoder/dist/Control.Geocoder.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/glightbox/dist/css/glightbox.min.css">
+</head>
+<body>
+  <div class="toolbar">
+    <strong>Doppelklick (mobil: lange Drücken) = neue Station</strong>
+    <button id="undoBtn" disabled>Letzte löschen</button>
+    <button id="clearBtn" disabled>Alles löschen</button>
+    <button id="importGeoBtn">GeoJSON importieren…</button>
+    <button id="importGpxBtn">GPX importieren…</button>
+    <button id="exportGeoBtn" disabled>GeoJSON</button>
+    <button id="exportGpxBtn" disabled>GPX</button>
+    <button id="exportHtmlBtn" disabled>Ein-Datei-HTML</button>
+    <span id="routeinfo"></span>
+  </div>
+
+  <div id="map"></div>
+  <div id="legs"></div>
+
+  <!-- Versteckte Inputs -->
+  <input type="file" id="imgInput"  accept="image/*"                                   hidden>
+  <input type="file" id="fileGeo" accept=".geojson,.json,application/geo+json,application/json" hidden>
+  <input type="file" id="fileGpx"  accept=".gpx,application/gpx+xml,application/xml"  hidden>
+
+  <!-- JS libs -->
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@5.8.1/dist/togeojson.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/glightbox/dist/js/glightbox.min.js"></script>
+
+  <!-- deine App -->
+  <script src="map.js?v=10"></script>
+
+</body>
+</html>

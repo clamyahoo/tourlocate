@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tourlocate</title>
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- Leaflet & Plugins -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-control-geocoder/dist/Control.Geocoder.css">
+
+  <!-- GLightbox -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/glightbox/dist/css/glightbox.min.css">
+
+  <!-- Favicon (vermeidet 404) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>">
+</head>
+<body>
+  <div class="toolbar">
+    <strong>Doppelklick (mobil: lange drücken) = neue Station</strong>
+    <button id="undoBtn" disabled>Letzte löschen</button>
+    <button id="clearBtn" disabled>Alles löschen</button>
+    <button id="importGeoBtn">GeoJSON importieren…</button>
+    <button id="importGpxBtn">GPX importieren…</button>
+    <button id="exportGeoBtn">GeoJSON</button>
+    <button id="exportGpxBtn">GPX</button>
+    <button id="exportHtmlBtn">Ein-Datei-HTML</button>
+    <span id="routeinfo"></span>
+  </div>
+
+  <div id="map"></div>
+  <div id="legs"></div>
+
+  <!-- Versteckte Inputs -->
+  <input type="file" id="imgInput"  accept="image/*" hidden>
+  <input type="file" id="fileGeo" accept=".geojson,.json,application/geo+json,application/json" hidden>
+  <input type="file" id="fileGpx"  accept=".gpx,application/gpx+xml,application/xml" hidden>
+
+  <!-- JS-Bibliotheken -->
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@5.8.1/dist/togeojson.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+
+  <!-- GLightbox -->
+  <script src="https://cdn.jsdelivr.net/npm/glightbox/dist/js/glightbox.min.js"></script>
+
+  <!-- App-Module -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

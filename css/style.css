@@ -1,8 +1,5 @@
 body { margin:0; font-family: system-ui, sans-serif; }
 
-/* höhere Karte */
-#map { height: 82vh; }
-
 .toolbar {
   padding:8px 12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
   background:#f5f5f5; border-bottom:1px solid #ddd;
@@ -10,21 +7,35 @@ body { margin:0; font-family: system-ui, sans-serif; }
 button { padding:6px 10px; border:1px solid #bbb; border-radius:6px; background:#fff; cursor:pointer; }
 button:disabled { opacity:.5; cursor:not-allowed; }
 
-/* exakt mittig (horizontal + vertikal) */
+/* Nummer exakt mittig (horizontal + vertikal) */
 .poi-num{
   width:26px; height:26px; border-radius:50%;
-  display:grid; place-items:center;     /* <-- zentriert */
+  display:grid; place-items:center;
   background:#2b6cb0; color:#fff;
-  font-weight:700; font-size:13px;
+  font-weight:700; font-size:13px; line-height:1;
   border:2px solid #fff;
   box-shadow:0 0 4px rgba(0,0,0,.3);
 }
 
 #routeinfo { margin-left:auto; font-weight:600; }
 
-/* optional – wird aktuell nicht benötigt, kann bleiben */
-#legs {
-  width:100%; padding:6px 12px; background:#fafafa; border-top:1px solid #ddd;
-  font:13px/1.4 sans-serif;
+/* Anzeige-Popup (Titel, Link, Bild-Thumb) */
+.tl-card{ display:flex; flex-direction:column; gap:6px; font:12px/1.3 system-ui,sans-serif; }
+.tl-title{ line-height:1.3; }
+.tl-thumb{
+  width:120px; height:90px; overflow:hidden; border-radius:6px;
+  box-shadow:0 0 3px rgba(0,0,0,.2); display:inline-block; line-height:0;
 }
-#legs ul { margin:4px 0 0; padding-left:18px; }
+.tl-thumb-btn{ display:block; width:120px; height:90px; padding:0; border:0; background:none; cursor:zoom-in; }
+.tl-thumb img{ width:100%; height:100%; object-fit:contain; display:block; }
+
+/* Anlegen/Bearbeiten-Dialog */
+.tl-form{ display:flex; flex-direction:column; gap:6px; font:12px/1.3 system-ui,sans-serif; }
+.tl-form label{ display:flex; flex-direction:column; gap:2px; }
+.tl-form input{ width:220px; padding:3px 5px; border:1px solid #bbb; border-radius:4px; font:inherit; }
+.tl-form-row{ display:flex; gap:6px; flex-wrap:wrap; }
+.tl-form-thumb{
+  width:120px; height:90px; object-fit:contain; display:none;
+  background:#fff; border:1px solid #e6e6e6; border-radius:6px;
+}
+.tl-danger{ border-color:#c33; color:#c33; }

@@ -1,149 +1,394 @@
-// js/map-io.js
-// =============== Import / Export für GeoJSON, GPX & HTML ===============
+// Import / Export: GeoJSON, GPX und offline-fähige Ein-Datei-HTML
 
-import { readFileAsText, downloadFile, geoJSONToGPX, prettyJSON } from './map-utils.js';
-import { updateRoute, fitToMarkers } from './map-core.js';
-import { addPOI } from './map-pois.js';
+import { CDN, EXPORT_FILES } from './map-config.js';
+import { readFileAsText, triggerBlobDownload, escapeXml } from './map-utils.js';
+import { createPoi, renumberAndRoute } from './map-pois.js';
 
-// Hauptsetup, wird in main.js aufgerufen
+const $ = id => document.getElementById(id);
+
 export function setupIO(map) {
-  const importGeoBtn = document.getElementById('importGeoBtn');
-  const importGpxBtn = document.getElementById('importGpxBtn');
-  const exportGeoBtn = document.getElementById('exportGeoBtn');
-  const exportGpxBtn = document.getElementById('exportGpxBtn');
-  const exportHtmlBtn = document.getElementById('exportHtmlBtn');
+  // onclick/onchange-Zuweisung ist idempotent → gefahrlos wiederholbar
+  // (bfcache/DDG-Reaktivierung wie im Alt-Code, aber ohne Doppelbindung)
+  const bind = () => {
+    $('importGeoBtn').onclick = () => { const f = $('fileGeo'); f.value = ''; f.click(); };
+    $('importGpxBtn').onclick = () => { const f = $('fileGpx'); f.value = ''; f.click(); };
+    $('fileGeo').onchange = e => importGeoFile(map, e.target);
+    $('fileGpx').onchange = e => importGpxFile(map, e.target);
 
-  const fileGeo = document.getElementById('fileGeo');
-  const fileGpx = document.getElementById('fileGpx');
-
-  // ==================== IMPORT ====================
-
-  importGeoBtn.addEventListener('click', () => fileGeo.click());
-  importGpxBtn.addEventListener('click', () => fileGpx.click());
-
-  fileGeo.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try {
-      const text = await readFileAsText(file);
-      const geojson = JSON.parse(text);
-      loadGeoJSON(map, geojson);
-    } catch (err) {
-      alert('Fehler beim Importieren von GeoJSON:\n' + err);
-    }
-    fileGeo.value = '';
-  });
-
-  fileGpx.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try {
-      const text = await readFileAsText(file);
-      const xml = new DOMParser().parseFromString(text, 'application/xml');
-      const geojson = toGeoJSON.gpx(xml);
-      loadGeoJSON(map, geojson);
-    } catch (err) {
-      alert('Fehler beim Importieren von GPX:\n' + err);
-    }
-    fileGpx.value = '';
-  });
-
-  // ==================== EXPORT ====================
-
-  exportGeoBtn.addEventListener('click', () => {
-    const geojson = exportGeoJSON(map);
-    const content = prettyJSON(geojson);
-    downloadFile('tourlocate.geojson', content, 'application/geo+json');
-  });
-
-  exportGpxBtn.addEventListener('click', () => {
-    const geojson = exportGeoJSON(map);
-    const gpx = geoJSONToGPX(geojson);
-    downloadFile('tourlocate.gpx', gpx, 'application/gpx+xml');
-  });
-
-  exportHtmlBtn.addEventListener('click', () => {
-    const html = exportSingleHTML(map);
-    downloadFile('tourlocate.html', html, 'text/html');
-  });
+    $('exportGeoBtn').onclick = () => triggerBlobDownload(EXPORT_FILES.geojson, buildGeoJSONBlob(map));
+    $('exportGpxBtn').onclick = () => triggerBlobDownload(EXPORT_FILES.gpx, buildGpxBlob(map));
+    $('exportHtmlBtn').onclick = () => exportSingleFileHtml(map);
+  };
+  bind();
+  window.addEventListener('pageshow', bind);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) bind(); });
 }
 
-// =============== GEOJSON-Export ===============
-export function exportGeoJSON(map) {
-  const features = map.markersLayer.getLayers().map((m) => {
-    const latlng = m.getLatLng();
-    const popup = m.getPopup()?.getContent() || '';
-    return {
+// ==================== Export: GeoJSON ====================
+export function buildGeoJSONBlob(map) {
+  const fc = {
+    type: 'FeatureCollection',
+    features: map.state.pois.map((p, i) => ({
       type: 'Feature',
-      geometry: { type: 'Point', coordinates: [latlng.lng, latlng.lat] },
-      properties: { popupContent: popup }
-    };
+      properties: { index: i + 1, name: p.name, link: p.link, img: p.img },
+      geometry: { type: 'Point', coordinates: [p.lng, p.lat] }
+    }))
+  };
+  return new Blob([JSON.stringify(fc, null, 2)], { type: 'application/json' });
+}
+
+// ==================== Export: GPX (Waypoints) ====================
+export function buildGpxBlob(map) {
+  const wpts = map.state.pois.map((p, i) =>
+    `<wpt lat="${p.lat}" lon="${p.lng}"><name>${escapeXml((i + 1) + '. ' + (p.name || 'Station'))}</name></wpt>`
+  ).join('\n');
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Tourlocate" xmlns="http://www.topografix.com/GPX/1/1">\n${wpts}\n</gpx>`;
+  return new Blob([gpx], { type: 'application/gpx+xml' });
+}
+
+// ==================== Import: GeoJSON / GPX ====================
+function importGeoFile(map, input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  readFileAsText(f).then(text => {
+    const geo = JSON.parse(text);
+    if (!(geo.type === 'FeatureCollection' || geo.type === 'Feature')) {
+      alert('Die Datei scheint keine gültige GeoJSON-Datei zu sein. Nicht gültige Dateien werden beim Import verworfen.');
+      return;
+    }
+    importFeatures(map, geo, { namesOnly: false });
+  }).catch(err => {
+    alert('GeoJSON-Fehler: ' + (err?.message || err));
+    console.warn('Fehler beim GeoJSON-Import:', err);
+  }).finally(() => { input.value = ''; });
+}
+
+function importGpxFile(map, input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  readFileAsText(f).then(text => {
+    // Das UMD-Global von @tmcw/togeojson heißt kleingeschrieben "togeojson"
+    const tg = window.togeojson || window.toGeoJSON;
+    if (!tg) {
+      alert('GPX-Import benötigt die togeojson-Bibliothek (Script in index.html einbinden).');
+      return;
+    }
+    const xml = new DOMParser().parseFromString(text, 'application/xml');
+    const gj = tg.gpx(xml);
+    if (gj.type !== 'FeatureCollection') {
+      alert('Die Datei scheint keine gültige GPX-Datei zu sein. Nicht gültige Dateien werden beim Import verworfen.');
+      return;
+    }
+    importFeatures(map, gj, { namesOnly: true });
+  }).catch(err => {
+    alert('GPX-Fehler: ' + (err?.message || err));
+    console.warn('Fehler beim GPX-Import:', err);
+  }).finally(() => { input.value = ''; });
+}
+
+// Point-Features additiv als POIs übernehmen (gleicher Codepfad wie
+// manuelles Anlegen), danach Route/Nummern aktualisieren und hinzoomen
+function importFeatures(map, gj, { namesOnly }) {
+  const features = gj.type === 'Feature' ? [gj] : (gj.features || []);
+  const added = [];
+
+  features.forEach(ft => {
+    if (ft?.geometry?.type !== 'Point') return;
+    const [lng, lat] = ft.geometry.coordinates;
+    let name = ft.properties?.name || '';
+    // GPX aus eigenem Export trägt die Nummer im Namen → beim Re-Import strippen
+    if (namesOnly) name = name.replace(/^\d+\.\s*/, '');
+    added.push(createPoi(map, {
+      lat, lng, name,
+      link: namesOnly ? '' : (ft.properties?.link || ''),
+      img: namesOnly ? '' : (ft.properties?.img || '')
+    }));
   });
 
+  renumberAndRoute(map);
+
+  if (added.length) {
+    const bounds = L.featureGroup(added.map(p => p.marker)).getBounds();
+    if (bounds.isValid()) map.fitBounds(bounds.pad(0.15));
+  }
+}
+
+// ==================== Export: Ein-Datei-HTML (offline-fähig) ====================
+async function exportSingleFileHtml(map) {
+  const btn = $('exportHtmlBtn');
+  const routeinfo = $('routeinfo');
+  const prevText = routeinfo.textContent;
+  btn.disabled = true;
+  routeinfo.textContent = 'Erstelle Export…';
+  try {
+    const snapshot = await captureMapSnapshot(map);
+    const assets = await fetchLeafletAssets();
+    const blob = buildSingleFileHtmlBlob(map, snapshot, assets);
+    triggerBlobDownload(EXPORT_FILES.html, blob);
+  } finally {
+    btn.disabled = map.state.pois.length === 0;
+    routeinfo.textContent = prevText;
+  }
+}
+
+// Sichtbaren Kartenausschnitt als JPEG einfangen (für die Offline-Anzeige).
+// Stufe 1: geladene Kacheln aus dem DOM auf ein Canvas zeichnen.
+// Stufe 2: Kacheln des Ausschnitts direkt fetchen (max. 32).
+// Stufe 3 (beides fehlgeschlagen): Export ohne Schnappschuss.
+async function captureMapSnapshot(map) {
+  try {
+    const s = captureFromDom(map);
+    if (s) return s;
+  } catch (e) {
+    console.warn('Karten-Schnappschuss (DOM) fehlgeschlagen:', e);
+  }
+  try {
+    return await captureFromTiles(map);
+  } catch (e) {
+    console.warn('Karten-Schnappschuss (Tile-Fetch) fehlgeschlagen:', e);
+  }
+  return null;
+}
+
+function captureFromDom(map) {
+  const base = map.state.activeBase;
+  const container = base?.getContainer?.();
+  if (!container) return null;
+  const tiles = container.querySelectorAll('img.leaflet-tile-loaded');
+  if (!tiles.length) return null;
+
+  const mapRect = map.getContainer().getBoundingClientRect();
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(mapRect.width);
+  canvas.height = Math.round(mapRect.height);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ddd';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // getBoundingClientRect übersteht alle Pane-Transforms zuverlässig
+  tiles.forEach(img => {
+    const r = img.getBoundingClientRect();
+    ctx.drawImage(img, r.left - mapRect.left, r.top - mapRect.top, r.width, r.height);
+  });
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.8); // wirft bei tainted canvas
+  const b = map.getBounds();
   return {
-    type: 'FeatureCollection',
-    features
+    img: dataUrl,
+    bounds: [[b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()]]
   };
 }
 
-// =============== GEOJSON-Import ===============
-function loadGeoJSON(map, geojson) {
-  if (!geojson.features) return;
-  map.markersLayer.clearLayers();
+async function captureFromTiles(map) {
+  const base = map.state.activeBase;
+  const tpl = base?._url;
+  if (!tpl) return null;
 
-  geojson.features.forEach((f, i) => {
-    if (f.geometry?.type !== 'Point') return;
-    const [lng, lat] = f.geometry.coordinates;
-    addPOI(map, L.latLng(lat, lng));
-  });
+  const lon2tile = (lon, z) => Math.floor((lon + 180) / 360 * Math.pow(2, z));
+  const lat2tile = (lat, z) => Math.floor(
+    (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z)
+  );
+  const tile2lon = (x, z) => x / Math.pow(2, z) * 360 - 180;
+  const tile2lat = (y, z) => {
+    const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z);
+    return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+  };
 
-  updateRoute(map);
-  fitToMarkers(map);
+  const b = map.getBounds();
+  let z = Math.min(Math.round(map.getZoom()), base?.options?.maxZoom ?? 19);
+  let x1, x2, y1, y2;
+  // Zoomstufe verringern, bis der Ausschnitt mit ≤32 Kacheln abgedeckt ist
+  for (;;) {
+    x1 = lon2tile(b.getWest(), z); x2 = lon2tile(b.getEast(), z);
+    y1 = lat2tile(b.getNorth(), z); y2 = lat2tile(b.getSouth(), z);
+    if ((x2 - x1 + 1) * (y2 - y1 + 1) <= 32 || z <= 2) break;
+    z--;
+  }
+
+  const tileUrl = (x, y) => tpl
+    .replace('{s}', 'a')
+    .replace('{r}', '')
+    .replace('{z}', z)
+    .replace('{x}', x)
+    .replace('{y}', y);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = (x2 - x1 + 1) * 256;
+  canvas.height = (y2 - y1 + 1) * 256;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ddd';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const jobs = [];
+  let drawn = 0;
+  for (let x = x1; x <= x2; x++) {
+    for (let y = y1; y <= y2; y++) {
+      jobs.push(
+        fetch(tileUrl(x, y))
+          .then(res => { if (!res.ok) throw new Error('tile ' + res.status); return res.blob(); })
+          .then(blob => createImageBitmap(blob))
+          .then(bmp => { ctx.drawImage(bmp, (x - x1) * 256, (y - y1) * 256); drawn++; })
+          .catch(() => {}) // einzelne fehlende Kacheln sind ok
+      );
+    }
+  }
+  await Promise.all(jobs);
+  if (!drawn) return null;
+
+  return {
+    img: canvas.toDataURL('image/jpeg', 0.8),
+    bounds: [[tile2lat(y2 + 1, z), tile2lon(x1, z)], [tile2lat(y1, z), tile2lon(x2 + 1, z)]]
+  };
 }
 
-// =============== Ein-Datei-HTML-Export ===============
-function exportSingleHTML(map) {
-  const baseLayer = getActiveBaseLayer(map);
-  const geojson = exportGeoJSON(map);
-  const geoData = prettyJSON(geojson);
+// Leaflet-Quellen zum Einbetten holen (liegen im Browser-Cache);
+// bei Fehlschlag fällt die Exportdatei auf die CDN-URLs zurück
+async function fetchLeafletAssets() {
+  try {
+    const [jsRes, cssRes] = await Promise.all([fetch(CDN.leafletJs), fetch(CDN.leafletCss)]);
+    if (!jsRes.ok || !cssRes.ok) return null;
+    const js = await jsRes.text();
+    const css = await cssRes.text();
+    if (js.includes('</script')) return null; // würde das Inline-<script> sprengen
+    return { js, css };
+  } catch {
+    return null;
+  }
+}
 
-  return `
-<!DOCTYPE html>
-<html lang="de">
-<head>
+function buildSingleFileHtmlBlob(map, snapshot, assets) {
+  const S = map.state;
+  const base = S.activeBase;
+
+  const data = {
+    GEO: S.pois.map(p => ({
+      lat: p.lat, lng: p.lng,
+      name: p.name || '', link: p.link || '', img: p.img || ''
+    })),
+    // Fallback: direkte Linie zwischen den Stationen
+    ROUTE: (S.routeCoords && S.routeCoords.length) ? S.routeCoords : S.pois.map(p => [p.lat, p.lng]),
+    TILE_URL: base?._url || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    TILE_ATTR: (base?.getAttribution && base.getAttribution()) || '© OpenStreetMap',
+    TILE_MAXZ: base?.options?.maxZoom || 19,
+    SNAPSHOT: snapshot || null
+  };
+  // "<" escapen, damit in der Payload nie "</script>" entsteht
+  const jsonSafe = JSON.stringify(data).replace(/</g, '\\u003c');
+
+  const leafletCssBlock = assets
+    ? '<style>\n' + assets.css + '\n</style>'
+    : `<link rel="stylesheet" href="${CDN.leafletCss}">`;
+  const leafletJsBlock = assets
+    ? '<script>\n' + assets.js + '\n</script>'
+    : '';
+
+  const html = `<!doctype html><html lang="de"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tourlocate Export</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+${leafletCssBlock}
 <style>
-  html,body {height:100%;margin:0;}
-  #map {height:100%;}
+  html,body{height:100%;margin:0;font-family:system-ui,sans-serif}
+  #map{height:82vh}
+  #routeinfo{padding:8px 12px;font-weight:600}
+  .poi-num{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#2b6cb0;color:#fff;font-weight:700;font-size:13px;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.3)}
+  .tl-card{font:12px/1.3 system-ui,sans-serif;display:flex;flex-direction:column;gap:6px}
+  button.thumb{padding:0;border:0;background:none;cursor:zoom-in}
+  .tl-thumb{width:120px;height:90px;background:#fff;border:1px solid #e6e6e6;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;overflow:hidden}
+  .tl-thumb > img{width:100%;height:100%;object-fit:contain;display:block}
 </style>
-</head>
-<body>
-<div id="map"></div>
-<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-  const map = L.map('map').setView([${map.getCenter().lat}, ${map.getCenter().lng}], ${map.getZoom()});
-  const base = L.tileLayer('${baseLayer._url}', { maxZoom: ${baseLayer.options.maxZoom}, attribution: \`${baseLayer.getAttribution()}\` }).addTo(map);
-  const data = ${geoData};
-  L.geoJSON(data, {
-    onEachFeature: (f, layer) => {
-      if (f.properties && f.properties.popupContent) {
-        layer.bindPopup(f.properties.popupContent);
-      }
-    }
-  }).addTo(map);
-</script>
-</body>
-</html>`;
-}
+</head><body>
 
-// Hilfsfunktion: aktives Layer finden
-function getActiveBaseLayer(map) {
-  let active;
-  map.eachLayer(l => {
-    if (l instanceof L.TileLayer && map.hasLayer(l)) active = l;
-  });
-  return active;
+<div id="map"></div>
+<div id="routeinfo"></div>
+
+<script id="tl-data" type="application/json">${jsonSafe}</script>
+${leafletJsBlock}
+<script>
+(function(){
+  // Mini-Lightbox
+  var W=document.createElement('div');
+  W.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.92);z-index:99999;padding:4vh';
+  var I=document.createElement('img');
+  I.style.cssText='max-width:92vw;max-height:92vh;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5)';
+  W.appendChild(I);
+  document.body.appendChild(W);
+  function hide(){ W.style.display='none'; I.removeAttribute('src'); }
+  W.addEventListener('click', hide, {passive:true});
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape') hide(); });
+  document.addEventListener('click', function(e){
+    var b=e.target.closest && e.target.closest('button.thumb'); if(!b) return;
+    e.preventDefault();
+    var src=b.getAttribute('data-img')||'', alt=b.getAttribute('data-title')||'';
+    I.removeAttribute('src'); if(alt) I.alt=alt;
+    var T=new Image(); T.onload=function(){ I.src=src; W.style.display='flex'; };
+    T.src=src;
+  }, true);
+
+  function d2r(x){ return x*Math.PI/180; }
+  function segKm(a,b){
+    var dLat=d2r(b[0]-a[0]), dLng=d2r(b[1]-a[1]);
+    var sa=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(d2r(a[0]))*Math.cos(d2r(b[0]))*Math.sin(dLng/2)*Math.sin(dLng/2);
+    return 2*6371*Math.asin(Math.sqrt(sa));
+  }
+  function sumKm(c){ if(!c||c.length<2) return 0; var s=0; for(var i=1;i<c.length;i++) s+=segKm(c[i-1],c[i]); return s; }
+  function formatKm(km){ return (km<10?km.toFixed(2):km.toFixed(1)).replace('.', ',')+' km'; }
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  function init(){
+    try {
+      var data=JSON.parse(document.getElementById('tl-data').textContent);
+      var map=L.map('map').setView([0,0],2);
+
+      // Offline-Fallback: Schnappschuss UNTER die Live-Kacheln legen.
+      // Online verdecken die Kacheln das Bild, offline bleibt es sichtbar.
+      if (data.SNAPSHOT && data.SNAPSHOT.img && data.SNAPSHOT.bounds) {
+        var pane=map.createPane('tl-snapshot');
+        pane.style.zIndex=150; // Kachel-Pane liegt bei 200
+        L.imageOverlay(data.SNAPSHOT.img, data.SNAPSHOT.bounds, {pane:'tl-snapshot'}).addTo(map);
+      }
+      L.tileLayer(data.TILE_URL, {maxZoom:data.TILE_MAXZ, attribution:data.TILE_ATTR}).addTo(map);
+
+      var markers=L.featureGroup().addTo(map);
+      (data.GEO||[]).forEach(function(p,i){
+        var icon=L.divIcon({className:'poi-num', html:String(i+1), iconSize:[26,26], iconAnchor:[13,13]});
+        var m=L.marker([p.lat,p.lng],{icon:icon}).addTo(markers);
+        var title=(i+1)+'. '+(p.name||'Station');
+        var linkHtml=p.link?'<div><a href="'+esc(p.link)+'" target="_blank" rel="noopener">Link</a></div>':'';
+        var imgHtml=p.img?'<div><button type="button" class="thumb" data-img="'+p.img+'" data-title="'+esc(title)+'"><span class="tl-thumb"><img src="'+p.img+'" alt=""></span></button></div>':'';
+        m.bindPopup('<div class="tl-card"><strong>'+esc(title)+'</strong>'+linkHtml+imgHtml+'</div>');
+      });
+
+      if (Array.isArray(data.ROUTE) && data.ROUTE.length>1) {
+        L.polyline(data.ROUTE, {weight:4, color:'#d33'}).addTo(map);
+      }
+
+      var b=markers.getBounds();
+      if (b.isValid()) map.fitBounds(b.pad(0.15));
+      else if (data.SNAPSHOT && data.SNAPSHOT.bounds) map.fitBounds(data.SNAPSHOT.bounds);
+      setTimeout(function(){ map.invalidateSize(); }, 0);
+
+      var km=0;
+      if (Array.isArray(data.ROUTE) && data.ROUTE.length>1) km=sumKm(data.ROUTE);
+      else if (data.GEO && data.GEO.length>1) km=sumKm(data.GEO.map(function(p){ return [p.lat,p.lng]; }));
+      document.getElementById('routeinfo').textContent = km>0 ? 'Gesamt: '+formatKm(km) : '';
+    } catch(e) {
+      document.getElementById('map').innerHTML='<div style="padding:12px;color:#b00">Fehler beim Kartenaufbau: '+((e&&e.message)||e)+'</div>';
+    }
+  }
+
+  if (window.L) { init(); }
+  else {
+    var s=document.createElement('script');
+    s.src='${CDN.leafletJs}';
+    s.onload=init;
+    s.onerror=function(){ document.getElementById('map').innerHTML='<div style="padding:12px;color:#b00">Leaflet konnte nicht geladen werden (offline?).</div>'; };
+    document.head.appendChild(s);
+  }
+})();
+</${'script'}>
+
+</body></html>`;
+
+  return new Blob([html], { type: 'text/html;charset=utf-8' });
 }

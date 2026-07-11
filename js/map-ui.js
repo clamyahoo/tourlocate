@@ -1,89 +1,301 @@
-// UI-Interaktion, Toolbar, Popup-Buttons
+// UI: Toolbar, Anlegen/Bearbeiten-Dialog, Lightbox, Dateipicker
 
-import { updateRoute } from './map-core.js';
-import { addPOI } from './map-pois.js';
+import { IMG_MAX_SIDE, IMG_QUALITY } from './map-config.js';
+import { fileToDataURL } from './map-utils.js';
+import { bindPoiPopup, renumberAndRoute, removePoi, removeLastPoi, clearPois } from './map-pois.js';
 
-export function setupUI(map) {
-  const undoBtn = document.getElementById('undoBtn');
-  const clearBtn = document.getElementById('clearBtn');
-  const routeinfo = document.getElementById('routeinfo');
+const $ = id => document.getElementById(id);
 
-  function updateButtons() {
-    const count = map.markersLayer.getLayers().length;
-    undoBtn.disabled = count === 0;
-    clearBtn.disabled = count === 0;
+// Karten-Referenz für die Lightbox (gesetzt in setupUI)
+let _map = null;
+
+// ==================== Zentraler Dateipicker (DDG-robust) ====================
+// Ein persistenter Input mit Einmal-Bindung + value-Reset; frisch erzeugte
+// One-Shot-Inputs verhalten sich in der DuckDuckGo-WebView unzuverlässig.
+let __pickImageCb = null;
+
+function setupFilePicker() {
+  let inp = $('imgInput');
+  if (!inp) {
+    inp = document.createElement('input');
+    inp.type = 'file';
+    inp.id = 'imgInput';
+    inp.accept = 'image/*';
+    inp.style.display = 'none';
+    document.body.appendChild(inp);
+  }
+  if (!inp.__bound) {
+    inp.__bound = true;
+    inp.addEventListener('change', async e => {
+      try {
+        const f = e.target.files && e.target.files[0];
+        e.target.value = ''; // Reset für den nächsten Pick
+        if (f && typeof __pickImageCb === 'function') {
+          await __pickImageCb(f);
+        }
+      } catch (err) {
+        console.error('pickImage error:', err);
+        alert('Bild konnte nicht geladen werden: ' + (err?.message || err));
+      } finally {
+        __pickImageCb = null;
+      }
+    });
+  }
+}
+
+export function pickImage(callback) {
+  setupFilePicker();
+  __pickImageCb = callback;
+  $('imgInput').click();
+}
+
+// ==================== Lightbox (eigene, robuste Overlay-Lösung) ====================
+let LB = { overlay: null, img: null, cap: null, spinner: null, last: null };
+
+function ensureLightbox() {
+  if (LB.overlay) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'tl-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;display:none;background:rgba(0,0,0,.92);align-items:center;justify-content:center';
+
+  const fig = document.createElement('figure');
+  fig.style.cssText = 'max-width:92vw;max-height:92vh;margin:0;position:relative';
+
+  const spinner = document.createElement('div');
+  spinner.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:500 14px/1.4 system-ui,sans-serif;color:#ccc';
+  spinner.textContent = 'Lade Bild…';
+
+  const img = document.createElement('img');
+  img.style.cssText = 'max-width:92vw;max-height:86vh;display:block;margin:0 auto;visibility:hidden';
+
+  const cap = document.createElement('figcaption');
+  cap.style.cssText = 'color:#fff;text-align:center;margin-top:10px;font:500 14px/1.4 system-ui,sans-serif';
+
+  fig.appendChild(spinner);
+  fig.appendChild(img);
+  fig.appendChild(cap);
+  overlay.appendChild(fig);
+  document.body.appendChild(overlay);
+
+  const close = () => {
+    overlay.style.display = 'none';
+    if (LB.last && _map) {
+      _map.dragging[LB.last.drag ? 'enable' : 'disable']();
+      _map.scrollWheelZoom[LB.last.wheel ? 'enable' : 'disable']();
+      _map.doubleClickZoom[LB.last.dbl ? 'enable' : 'disable']();
+      LB.last = null;
+    }
+  };
+  overlay.addEventListener('click', close);
+  document.addEventListener('keydown', e => {
+    if (overlay.style.display !== 'none' && e.key === 'Escape') close();
+  });
+
+  LB = { overlay, img, cap, spinner, last: null };
+}
+
+export function openLightbox(href, title = '') {
+  ensureLightbox();
+  LB.spinner.style.display = 'flex';
+  LB.spinner.textContent = 'Lade Bild…';
+  LB.img.style.visibility = 'hidden';
+  LB.cap.textContent = title || '';
+  LB.overlay.style.display = 'flex';
+
+  // Karten-Gesten sperren, Zustand zum Wiederherstellen merken
+  if (_map) {
+    LB.last = {
+      drag: _map.dragging.enabled(),
+      wheel: _map.scrollWheelZoom.enabled(),
+      dbl: _map.doubleClickZoom.enabled()
+    };
+    _map.dragging.disable();
+    _map.scrollWheelZoom.disable();
+    _map.doubleClickZoom.disable();
   }
 
-  undoBtn.addEventListener('click', () => {
-    const layers = map.markersLayer.getLayers();
-    if (layers.length) {
-      map.markersLayer.removeLayer(layers[layers.length - 1]);
-      updateRoute(map);
-      updateButtons();
+  // Preload → erst nach load anzeigen (Fix für „erster Klick zeigt nichts" in FF)
+  const pre = new Image();
+  pre.onload = () => {
+    LB.img.src = pre.src;
+    LB.spinner.style.display = 'none';
+    LB.img.style.visibility = 'visible';
+  };
+  pre.onerror = () => { LB.spinner.textContent = 'Bild konnte nicht geladen werden.'; };
+  requestAnimationFrame(() => { pre.src = href; });
+}
+
+// ==================== Anlegen/Bearbeiten-Dialog ====================
+// Ein gemeinsames Formular für beide Fälle; ersetzt die früheren
+// prompt()-Abfragen (einheitliche Darstellung auf allen Systemen).
+export function openPoiDialog(map, p, mode) {
+  const isCreate = mode === 'create';
+  const staged = { img: p.img || '' };
+
+  const c = document.createElement('div');
+  c.className = 'tl-form';
+
+  const head = document.createElement('div');
+  const headStrong = document.createElement('strong');
+  headStrong.textContent = isCreate ? 'Neue Station' : 'Bearbeiten';
+  head.appendChild(headStrong);
+  c.appendChild(head);
+
+  const makeField = (labelText, value) => {
+    const label = document.createElement('label');
+    label.append(labelText);
+    const input = document.createElement('input');
+    input.value = value;
+    label.appendChild(input);
+    c.appendChild(label);
+    return input;
+  };
+  const nameInput = makeField('Bezeichnung:', p.name || '');
+  const linkInput = makeField('Link (optional):', p.link || '');
+
+  // Bild-Vorschau
+  const thumb = document.createElement('img');
+  thumb.className = 'tl-form-thumb';
+  thumb.alt = '';
+  c.appendChild(thumb);
+
+  const imgRow = document.createElement('div');
+  imgRow.className = 'tl-form-row';
+  const imgBtn = document.createElement('button');
+  imgBtn.type = 'button';
+  const imgDelBtn = document.createElement('button');
+  imgDelBtn.type = 'button';
+  imgDelBtn.textContent = 'Bild löschen';
+  imgRow.append(imgBtn, imgDelBtn);
+  c.appendChild(imgRow);
+
+  const actionRow = document.createElement('div');
+  actionRow.className = 'tl-form-row';
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.textContent = 'Speichern';
+  actionRow.appendChild(saveBtn);
+  if (isCreate) {
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Abbrechen';
+    cancelBtn.onclick = ev => {
+      ev.stopPropagation();
+      p.marker.closePopup(); // popupclose räumt den frischen POI weg
+    };
+    actionRow.appendChild(cancelBtn);
+  } else {
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = 'Station löschen';
+    deleteBtn.className = 'tl-danger';
+    deleteBtn.onclick = ev => {
+      ev.stopPropagation();
+      p.marker.off('popupclose', onPopupClose);
+      removePoi(map, p); // schließt das Popup automatisch mit
+    };
+    actionRow.appendChild(deleteBtn);
+  }
+  c.appendChild(actionRow);
+
+  const updateThumb = () => {
+    if (staged.img) {
+      thumb.src = staged.img;
+      thumb.style.display = 'block';
+      imgDelBtn.style.display = '';
+      imgBtn.textContent = 'Neues Bild';
+    } else {
+      thumb.removeAttribute('src');
+      thumb.style.display = 'none';
+      imgDelBtn.style.display = 'none';
+      imgBtn.textContent = 'Bild wählen…';
+    }
+  };
+
+  // Schließen ohne Speichern: beim Anlegen den frischen POI entfernen,
+  // beim Bearbeiten das Anzeige-Popup wiederherstellen
+  const onPopupClose = () => {
+    p.marker.off('popupclose', onPopupClose);
+    if (isCreate) {
+      removePoi(map, p);
+    } else {
+      bindPoiPopup(map, p, map.state.pois.indexOf(p));
+    }
+  };
+
+  const save = () => {
+    p.marker.off('popupclose', onPopupClose);
+    p.name = nameInput.value.trim();
+    p.link = linkInput.value.trim();
+    p.img = staged.img;
+    bindPoiPopup(map, p, map.state.pois.indexOf(p));
+    renumberAndRoute(map);
+    p.marker.openPopup();
+  };
+
+  saveBtn.onclick = ev => { ev.stopPropagation(); save(); };
+
+  imgBtn.onclick = ev => {
+    ev.stopPropagation();
+    pickImage(async file => {
+      staged.img = await fileToDataURL(file, IMG_MAX_SIDE, IMG_QUALITY);
+      updateThumb();
+    });
+  };
+
+  imgDelBtn.onclick = ev => {
+    ev.stopPropagation();
+    staged.img = '';
+    updateThumb();
+  };
+
+  // Enter in einem Eingabefeld = Speichern
+  c.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter' && ev.target.tagName === 'INPUT') {
+      ev.preventDefault();
+      save();
     }
   });
 
-  clearBtn.addEventListener('click', () => {
-    if (confirm('Alle Stationen und Routen löschen?')) {
-      map.markersLayer.clearLayers();
-      map.routeLayer.clearLayers();
-      updateRoute(map);
-      updateButtons();
-      routeinfo.textContent = '';
-    }
-  });
+  updateThumb();
+  p.marker.bindPopup(c, { minWidth: 240 });
+  p.marker.getPopup()._tlDialog = true; // renumberAndRoute lässt offene Dialoge in Ruhe
+  // Erst öffnen, DANN den Close-Listener scharf schalten: openPopup schließt
+  // ein evtl. offenes Anzeige-Popup desselben Markers, was sonst sofort den
+  // Listener auslösen würde.
+  p.marker.openPopup();
+  p.marker.on('popupclose', onPopupClose);
+  setTimeout(() => nameInput.focus(), 0);
+}
 
-  // Klicks auf Marker-Popups (Bearbeiten/Löschen)
-  map.on('popupopen', e => {
-    const el = e.popup.getElement();
-    const editBtn = el.querySelector('.editBtn');
-    const delBtn = el.querySelector('.deleteBtn');
+// ==================== Toolbar ====================
+export function setupUI(map) {
+  _map = map;
 
-    if (editBtn) {
-      editBtn.addEventListener('click', () => openEditPopup(map, e.popup._source));
-    }
-    if (delBtn) {
-      delBtn.addEventListener('click', () => {
-        map.markersLayer.removeLayer(e.popup._source);
-        updateRoute(map);
-        updateButtons();
-      });
-    }
+  const updateButtons = () => {
+    const off = map.state.pois.length === 0;
+    ['undoBtn', 'clearBtn', 'exportGeoBtn', 'exportGpxBtn', 'exportHtmlBtn']
+      .forEach(id => { const el = $(id); if (el) el.disabled = off; });
+  };
+  map.onPoisChanged = updateButtons;
+
+  // onclick-Zuweisung ist idempotent → gefahrlos wiederholbar (bfcache/DDG)
+  const bindToolbar = () => {
+    $('undoBtn').onclick = () => removeLastPoi(map);
+    $('clearBtn').onclick = () => {
+      if (map.state.pois.length && confirm('Alle Stationen löschen?')) {
+        clearPois(map);
+      }
+    };
+  };
+  bindToolbar();
+  window.addEventListener('pageshow', bindToolbar);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) bindToolbar(); });
+
+  // ESC schließt offene Popups
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && map._popup) map.closePopup();
   });
 
   updateButtons();
-}
-
-function openEditPopup(map, marker) {
-  const latlng = marker.getLatLng();
-  const content = `
-    <div>
-      <b>Station bearbeiten</b><br>
-      <label>Titel:<br><input id="poiTitle" value=""></label><br>
-      <label>Beschreibung:<br><textarea id="poiDesc" rows="3"></textarea></label><br>
-      <button id="savePoi">Speichern</button>
-      <button id="cancelPoi">Abbrechen</button>
-    </div>
-  `;
-  marker.bindPopup(content).openPopup();
-
-  const el = marker.getPopup().getElement();
-  el.querySelector('#savePoi').addEventListener('click', () => {
-    const title = el.querySelector('#poiTitle').value;
-    const desc = el.querySelector('#poiDesc').value;
-    savePOIData(marker, title, desc);
-    marker.closePopup();
-  });
-  el.querySelector('#cancelPoi').addEventListener('click', () => marker.closePopup());
-}
-
-function savePOIData(marker, title, desc) {
-  marker.bindPopup(`
-    <div>
-      <b>${title || 'Station'}</b><br>
-      ${desc ? `<p>${desc}</p>` : ''}
-      <button class="editBtn">Bearbeiten</button>
-      <button class="deleteBtn">Löschen</button>
-    </div>
-  `);
 }

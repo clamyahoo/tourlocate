@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Tourlocate</title>
 
-  <!-- Base styles -->
-  <link rel="stylesheet" href="/old/style.css">
-
   <!-- Leaflet & plugins CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-control-geocoder/dist/Control.Geocoder.css">
+
+  <!-- Eigene Styles NACH den Bibliotheken (sonst überschreibt
+       .leaflet-marker-icon{display:block} das Zentrieren der POI-Nummer) -->
+  <link rel="stylesheet" href="css/style.css">
 
   <!-- Favicon (vermeidet 404) -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>">
@@ -26,20 +27,18 @@
 </head>
 <body>
   <div class="toolbar">
-    <strong>Doppelklick (mobil: lange Drücken) = neue Station</strong>
+    <strong>Doppelklick / Rechtsklick (mobil: Tippen / lange drücken) = neue Station</strong>
     <button id="undoBtn" disabled>Letzte löschen</button>
     <button id="clearBtn" disabled>Alles löschen</button>
     <button id="importGeoBtn">GeoJSON importieren…</button>
     <button id="importGpxBtn">GPX importieren…</button>
-    <!-- Export-Buttons: aktiviert, werden von map-io.js gebunden -->
-    <button id="exportGeoBtn">GeoJSON</button>
-    <button id="exportGpxBtn">GPX</button>
-    <button id="exportHtmlBtn">Ein-Datei-HTML</button>
+    <button id="exportGeoBtn" disabled>GeoJSON</button>
+    <button id="exportGpxBtn" disabled>GPX</button>
+    <button id="exportHtmlBtn" disabled>Ein-Datei-HTML</button>
     <span id="routeinfo"></span>
   </div>
 
   <div id="map"></div>
-  <div id="legs"></div>
 
   <!-- Versteckte Inputs -->
   <input type="file" id="imgInput"  accept="image/*" hidden>
@@ -51,12 +50,9 @@
   <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet-control-geocoder/dist/Control.Geocoder.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@5.8.1/dist/togeojson.umd.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" defer></script>
 
-<!-- vor deinen App-Skripten -->
-<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" defer></script>
-
-  <!-- App-Skripte: zuerst map.js (Karte/POIs/Viewer), dann map-io.js (Import/Export) -->
-  <script src="/old/map.js" defer></script>
-  <script src="/old/map-io.js" defer></script>
+  <!-- App (ES-Module; laufen nach den defer-Skripten oben) -->
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

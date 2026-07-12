@@ -93,7 +93,8 @@ curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_HEADER => true,
     CURLOPT_TIMEOUT => TIMEOUT_SECONDS,
-    CURLOPT_FOLLOWLOCATION => false, // Umleitungen könnten den SSRF-Schutz umgehen
+    CURLOPT_CONNECTTIMEOUT => 10,     // hängt sonst bei nicht erreichbaren Hosts lange
+    CURLOPT_FOLLOWLOCATION => false,  // Umleitungen könnten den SSRF-Schutz umgehen
     CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
     CURLOPT_SSL_VERIFYPEER => true,
 ]);
@@ -112,8 +113,11 @@ curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 $raw = curl_exec($ch);
 if ($raw === false) {
     $err = curl_error($ch);
+    $errno = curl_errno($ch);
     curl_close($ch);
-    proxy_fail(502, 'Verbindung zum WebDAV-Server fehlgeschlagen: ' . $err);
+    // errno hilft bei der Diagnose (z. B. 60 = Zertifikat, 6 = DNS,
+    // 7 = Verbindung abgelehnt, 28 = Timeout)
+    proxy_fail(502, 'curl-Fehler ' . $errno . ': ' . ($err !== '' ? $err : 'Verbindung fehlgeschlagen'));
 }
 
 $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);

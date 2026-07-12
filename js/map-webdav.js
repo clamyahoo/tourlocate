@@ -19,22 +19,44 @@ const IMAGE_EXT = /\.(jpe?g|png|webp|hei[cf])$/i;
 const PROXY_URL = 'webdav-proxy.php';
 
 // Anfrage über den Server-Proxy schicken (kein direkter Cross-Origin-
-// Zugriff aus dem Browser). Wirft 'auth' bei 401/403 von der Gegenstelle,
-// 'proxy' bei Fehlern im Proxy selbst (erkennbar am X-Proxy-Error-Header).
+// Zugriff aus dem Browser). Fehlerarten:
+//  'auth'            → Gegenstelle lehnt Anmeldung ab (401/403 ohne Proxy-Header)
+//  'proxy' + detail  → der Proxy selbst meldet ein Problem (X-Proxy-Error);
+//                      detail enthält den konkreten Grund (z. B. curl-Fehler)
+//  'nophp' + detail  → Anfrage kam nicht als Proxy-Antwort zurück
+//                      (PHP läuft nicht / Datei fehlt / statisches Hosting)
 async function proxyFetch(action, url) {
-  const res = await fetch(PROXY_URL, {
-    method: 'POST',
-    body: new URLSearchParams({
-      action,
-      url,
-      user: getSetting('webdavUser'),
-      pass: getSetting('webdavPass'),
-      key: PROXY_KEY
-    })
-  });
-  if (res.headers.get('X-Proxy-Error')) throw new Error('proxy');
+  let res;
+  try {
+    res = await fetch(PROXY_URL, {
+      method: 'POST',
+      body: new URLSearchParams({
+        action,
+        url,
+        user: getSetting('webdavUser'),
+        pass: getSetting('webdavPass'),
+        key: PROXY_KEY
+      })
+    });
+  } catch (e) {
+    const err = new Error('nophp');
+    err.detail = String(e?.message || e);
+    throw err;
+  }
+
+  if (res.headers.get('X-Proxy-Error')) {
+    const err = new Error('proxy');
+    err.detail = (await res.text().catch(() => '')).trim().slice(0, 400);
+    throw err;
+  }
   if (res.status === 401 || res.status === 403) throw new Error('auth');
-  if (!res.ok) throw new Error('http ' + res.status);
+  if (!res.ok) {
+    // Antwort kam nicht vom Proxy (kein X-Proxy-Error) → PHP wurde vermutlich
+    // gar nicht ausgeführt (statischer Host, fehlende Datei, Serverfehler)
+    const err = new Error('nophp');
+    err.detail = 'HTTP ' + res.status;
+    throw err;
+  }
   return res;
 }
 
@@ -104,11 +126,13 @@ export async function importFromWebdav(map, onProgress) {
   return { imported, skipped, total: urls.length };
 }
 
-// Fehler → verständliche, übersetzte Meldung
+// Fehler → verständliche, übersetzte Meldung (mit Detail, wo vorhanden)
 export function webdavErrorMessage(e) {
   const msg = e?.message || String(e);
+  const detail = e?.detail ? '\n\n' + e.detail : '';
   if (msg === 'nourl') return t('webdavNoUrl');
   if (msg === 'auth') return t('webdavAuthError');
-  if (msg === 'proxy') return t('webdavProxyError');
+  if (msg === 'proxy') return t('webdavProxyError') + detail;
+  if (msg === 'nophp') return t('webdavNoPhp') + detail;
   return t('webdavError', { msg });
 }

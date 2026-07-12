@@ -14,8 +14,10 @@
        .leaflet-marker-icon{display:block} das Zentrieren der POI-Nummer) -->
   <link rel="stylesheet" href="css/style.css">
 
-  <!-- Favicon (vermeidet 404) -->
+  <!-- Favicon: eigenes Logo (img/logo.png), Fallback = leeres SVG -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>">
+  <link rel="icon" type="image/png" href="img/logo.png">
+  <link rel="apple-touch-icon" href="img/logo.png">
 
   <!-- Layout: Seitenleiste links, Karte füllt den Rest -->
   <style>
@@ -30,7 +32,10 @@
 
   <aside id="sidebar">
     <div class="sb-head">
-      <strong>Tourlocate</strong>
+      <span class="sb-brand">
+        <img src="img/logo.png" alt="" onerror="this.style.display='none'">
+        <strong>Tourlocate</strong>
+      </span>
       <button id="sidebarClose" title="Seitenleiste einklappen">«</button>
     </div>
 
@@ -60,6 +65,9 @@
       </div>
       <div class="sb-row">
         <button id="importGpxBtn" data-i18n="importGpx">GPX importieren…</button>
+      </div>
+      <div class="sb-row">
+        <button id="importPhotosBtn" data-i18n="importPhotos">Fotos importieren…</button>
       </div>
     </details>
 
@@ -133,8 +141,12 @@
   <!-- Schwebende Distanz-/Statusanzeige über der Karte -->
   <div id="routeinfo"></div>
 
+  <!-- Overlay beim Foto-Drag-&-Drop über die Karte -->
+  <div id="dropOverlay"><span data-i18n="dropHint">Fotos hier ablegen — Stationen entstehen automatisch aus den GPS-Daten</span></div>
+
   <!-- Versteckte Inputs -->
   <input type="file" id="imgInput"  accept="image/*" hidden>
+  <input type="file" id="filePhotos" accept="image/*" multiple hidden>
   <input type="file" id="fileGeo" accept=".geojson,.json,application/geo+json,application/json" hidden>
   <input type="file" id="fileGpx"  accept=".gpx,application/gpx+xml,application/xml" hidden>
 

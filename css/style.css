@@ -21,6 +21,8 @@ body:not(.sidebar-closed) #sidebarToggle{ display:none; }
   display:flex; align-items:center; justify-content:space-between;
   padding:10px 12px; border-bottom:1px solid #eee; font-size:16px;
 }
+.sb-brand{ display:flex; align-items:center; gap:8px; min-width:0; }
+.sb-brand img{ width:30px; height:30px; border-radius:50%; flex:0 0 auto; }
 #sidebarClose{
   width:32px; height:32px; padding:0; font-size:16px; line-height:1;
   border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer;
@@ -71,6 +73,20 @@ select:disabled { opacity:.5; }
   white-space:nowrap;
 }
 #routeinfo:empty{ display:none; }
+
+/* Drop-Overlay beim Foto-Import per Drag & Drop */
+#dropOverlay{
+  position:fixed; inset:0; z-index:2000; display:none;
+  align-items:center; justify-content:center; text-align:center;
+  background:rgba(43,108,176,.15); backdrop-filter:blur(1px);
+  pointer-events:none; /* fängt keine eigenen Drag-Events ab */
+}
+#dropOverlay span{
+  background:#2b6cb0; color:#fff; padding:16px 28px; border-radius:12px;
+  font-size:16px; font-weight:600; max-width:80%;
+  box-shadow:0 4px 20px rgba(0,0,0,.35);
+}
+body.dragging-photos #dropOverlay{ display:flex; }
 
 /* Nummer exakt mittig (horizontal + vertikal) */
 .poi-num{

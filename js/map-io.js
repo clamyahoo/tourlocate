@@ -1,10 +1,21 @@
-// Import / Export: GeoJSON, GPX und offline-fähige Ein-Datei-HTML
+// Import / Export: GeoJSON, GPX (Komoot-kompatibel), offline-fähige
+// Ein-Datei-HTML und HTML+Bilder als ZIP
 
-import { CDN, EXPORT_FILES } from './map-config.js';
-import { readFileAsText, triggerBlobDownload, escapeXml } from './map-utils.js';
+import { CDN } from './map-config.js';
+import { getSetting } from './map-settings.js';
+import { t } from './map-i18n.js';
+import {
+  readFileAsText, triggerBlobDownload, escapeXml,
+  dataURLToBytes, buildZipBlob
+} from './map-utils.js';
 import { createPoi, renumberAndRoute } from './map-pois.js';
 
 const $ = id => document.getElementById(id);
+
+// Dateiname mit Datum, z. B. tourlocate-2026-07-12.gpx
+function exportFilename(ext) {
+  return `tourlocate-${new Date().toISOString().slice(0, 10)}.${ext}`;
+}
 
 export function setupIO(map) {
   // onclick/onchange-Zuweisung ist idempotent → gefahrlos wiederholbar
@@ -15,13 +26,23 @@ export function setupIO(map) {
     $('fileGeo').onchange = e => importGeoFile(map, e.target);
     $('fileGpx').onchange = e => importGpxFile(map, e.target);
 
-    $('exportGeoBtn').onclick = () => triggerBlobDownload(EXPORT_FILES.geojson, buildGeoJSONBlob(map));
-    $('exportGpxBtn').onclick = () => triggerBlobDownload(EXPORT_FILES.gpx, buildGpxBlob(map));
-    $('exportHtmlBtn').onclick = () => exportSingleFileHtml(map);
+    $('exportGeoBtn').onclick = () => triggerBlobDownload(exportFilename('geojson'), buildGeoJSONBlob(map));
+    $('exportGpxBtn').onclick = () => triggerBlobDownload(exportFilename('gpx'), buildGpxBlob(map));
+    $('exportHtmlBtn').onclick = () => exportHtml(map, { zip: false });
+    $('exportZipBtn').onclick = () => exportHtml(map, { zip: true });
   };
   bind();
   window.addEventListener('pageshow', bind);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) bind(); });
+}
+
+// Verbindungs-Geometrie für Exporte gemäß Einstellung
+function exportRoute(map) {
+  if (getSetting('lineMode') === 'none') return [];
+  const S = map.state;
+  return (S.routeCoords && S.routeCoords.length)
+    ? S.routeCoords
+    : S.pois.map(p => [p.lat, p.lng]);
 }
 
 // ==================== Export: GeoJSON ====================
@@ -30,19 +51,40 @@ export function buildGeoJSONBlob(map) {
     type: 'FeatureCollection',
     features: map.state.pois.map((p, i) => ({
       type: 'Feature',
-      properties: { index: i + 1, name: p.name, link: p.link, img: p.img },
+      properties: { index: i + 1, name: p.name, link: p.link, img: p.img, createdAt: p.createdAt || '' },
       geometry: { type: 'Point', coordinates: [p.lng, p.lat] }
     }))
   };
   return new Blob([JSON.stringify(fc, null, 2)], { type: 'application/json' });
 }
 
-// ==================== Export: GPX (Waypoints) ====================
+// ==================== Export: GPX (Komoot-kompatibel) ====================
+// Wegpunkte MIT Zeitstempel plus die Strecke als <trk> — Track ist das,
+// was Komoot & Co. als Tour importieren.
 export function buildGpxBlob(map) {
-  const wpts = map.state.pois.map((p, i) =>
-    `<wpt lat="${p.lat}" lon="${p.lng}"><name>${escapeXml((i + 1) + '. ' + (p.name || 'Station'))}</name></wpt>`
-  ).join('\n');
-  const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Tourlocate" xmlns="http://www.topografix.com/GPX/1/1">\n${wpts}\n</gpx>`;
+  const pois = map.state.pois;
+
+  // GPX-Schema: in <wpt> kommt <time> VOR <name>
+  const wpts = pois.map((p, i) => {
+    const time = p.createdAt ? `<time>${escapeXml(p.createdAt)}</time>` : '';
+    return `  <wpt lat="${p.lat}" lon="${p.lng}">${time}<name>${escapeXml((i + 1) + '. ' + (p.name || t('station')))}</name></wpt>`;
+  }).join('\n');
+
+  const route = exportRoute(map);
+  let trk = '';
+  if (route.length > 1) {
+    const pts = route.map(([lat, lng]) => `      <trkpt lat="${lat}" lon="${lng}"></trkpt>`).join('\n');
+    trk = `  <trk>\n    <name>Tourlocate</name>\n    <trkseg>\n${pts}\n    </trkseg>\n  </trk>\n`;
+  }
+
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Tourlocate" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Tourlocate</name>
+    <time>${new Date().toISOString()}</time>
+  </metadata>
+${wpts}
+${trk}</gpx>`;
   return new Blob([gpx], { type: 'application/gpx+xml' });
 }
 
@@ -53,12 +95,12 @@ function importGeoFile(map, input) {
   readFileAsText(f).then(text => {
     const geo = JSON.parse(text);
     if (!(geo.type === 'FeatureCollection' || geo.type === 'Feature')) {
-      alert('Die Datei scheint keine gültige GeoJSON-Datei zu sein. Nicht gültige Dateien werden beim Import verworfen.');
+      alert(t('invalidGeojson'));
       return;
     }
     importFeatures(map, geo, { namesOnly: false });
   }).catch(err => {
-    alert('GeoJSON-Fehler: ' + (err?.message || err));
+    alert(t('geojsonError', { msg: err?.message || err }));
     console.warn('Fehler beim GeoJSON-Import:', err);
   }).finally(() => { input.value = ''; });
 }
@@ -70,18 +112,18 @@ function importGpxFile(map, input) {
     // Das UMD-Global von @tmcw/togeojson heißt kleingeschrieben "togeojson"
     const tg = window.togeojson || window.toGeoJSON;
     if (!tg) {
-      alert('GPX-Import benötigt die togeojson-Bibliothek (Script in index.html einbinden).');
+      alert(t('needTogeojson'));
       return;
     }
     const xml = new DOMParser().parseFromString(text, 'application/xml');
     const gj = tg.gpx(xml);
     if (gj.type !== 'FeatureCollection') {
-      alert('Die Datei scheint keine gültige GPX-Datei zu sein. Nicht gültige Dateien werden beim Import verworfen.');
+      alert(t('invalidGpx'));
       return;
     }
     importFeatures(map, gj, { namesOnly: true });
   }).catch(err => {
-    alert('GPX-Fehler: ' + (err?.message || err));
+    alert(t('gpxError', { msg: err?.message || err }));
     console.warn('Fehler beim GPX-Import:', err);
   }).finally(() => { input.value = ''; });
 }
@@ -101,7 +143,9 @@ function importFeatures(map, gj, { namesOnly }) {
     added.push(createPoi(map, {
       lat, lng, name,
       link: namesOnly ? '' : (ft.properties?.link || ''),
-      img: namesOnly ? '' : (ft.properties?.img || '')
+      img: namesOnly ? '' : (ft.properties?.img || ''),
+      // GPX-<time> landet bei togeojson in properties.time
+      createdAt: ft.properties?.createdAt || ft.properties?.time || ''
     }));
   });
 
@@ -113,18 +157,25 @@ function importFeatures(map, gj, { namesOnly }) {
   }
 }
 
-// ==================== Export: Ein-Datei-HTML (offline-fähig) ====================
-async function exportSingleFileHtml(map) {
-  const btn = $('exportHtmlBtn');
+// ==================== Export: HTML (Ein-Datei oder ZIP mit Bilderordner) ====================
+async function exportHtml(map, { zip }) {
+  const btn = zip ? $('exportZipBtn') : $('exportHtmlBtn');
   const routeinfo = $('routeinfo');
   const prevText = routeinfo.textContent;
   btn.disabled = true;
-  routeinfo.textContent = 'Erstelle Export…';
+  routeinfo.textContent = t('creatingExport');
   try {
     const snapshot = await captureMapSnapshot(map);
     const assets = await fetchLeafletAssets();
-    const blob = buildSingleFileHtmlBlob(map, snapshot, assets);
-    triggerBlobDownload(EXPORT_FILES.html, blob);
+    const { html, imgFiles } = buildExportHtml(map, snapshot, assets, { imageFolder: zip });
+
+    if (zip) {
+      const files = [{ name: 'tourlocate.html', data: new TextEncoder().encode(html) }];
+      imgFiles.forEach(f => files.push({ name: f.name, data: dataURLToBytes(f.dataUrl) }));
+      triggerBlobDownload(exportFilename('zip'), buildZipBlob(files));
+    } else {
+      triggerBlobDownload(exportFilename('html'), new Blob([html], { type: 'text/html;charset=utf-8' }));
+    }
   } finally {
     btn.disabled = map.state.pois.length === 0;
     routeinfo.textContent = prevText;
@@ -256,21 +307,39 @@ async function fetchLeafletAssets() {
   }
 }
 
-function buildSingleFileHtmlBlob(map, snapshot, assets) {
+// Exportdatei bauen. imageFolder=true legt Bilder als eigene Dateien in
+// bilder/ ab (für den ZIP-Export) statt sie als Base64 einzubetten.
+function buildExportHtml(map, snapshot, assets, { imageFolder }) {
   const S = map.state;
   const base = S.activeBase;
+  const imgFiles = [];
+
+  const GEO = S.pois.map((p, i) => {
+    let img = p.img || '';
+    if (img && imageFolder) {
+      const name = 'bilder/station-' + String(i + 1).padStart(2, '0') + '.jpg';
+      imgFiles.push({ name, dataUrl: img });
+      img = name; // relative Referenz in der HTML
+    }
+    return {
+      lat: p.lat, lng: p.lng,
+      name: p.name || '', link: p.link || '', img,
+      createdAt: p.createdAt || ''
+    };
+  });
 
   const data = {
-    GEO: S.pois.map(p => ({
-      lat: p.lat, lng: p.lng,
-      name: p.name || '', link: p.link || '', img: p.img || ''
-    })),
-    // Fallback: direkte Linie zwischen den Stationen
-    ROUTE: (S.routeCoords && S.routeCoords.length) ? S.routeCoords : S.pois.map(p => [p.lat, p.lng]),
+    GEO,
+    ROUTE: exportRoute(map),
     TILE_URL: base?._url || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     TILE_ATTR: (base?.getAttribution && base.getAttribution()) || '© OpenStreetMap',
     TILE_MAXZ: base?.options?.maxZoom || 19,
-    SNAPSHOT: snapshot || null
+    SNAPSHOT: snapshot || null,
+    STRINGS: {
+      total: t('total', { km: '{km}' }),
+      mapError: t('exportMapError'),
+      leafletError: t('exportLeafletError')
+    }
   };
   // "<" escapen, damit in der Payload nie "</script>" entsteht
   const jsonSafe = JSON.stringify(data).replace(/</g, '\\u003c');
@@ -282,10 +351,10 @@ function buildSingleFileHtmlBlob(map, snapshot, assets) {
     ? '<script>\n' + assets.js + '\n</script>'
     : '';
 
-  const html = `<!doctype html><html lang="de"><head>
+  const html = `<!doctype html><html lang="${t('exportTitle') === 'Tourlocate Export' ? 'de' : 'en'}"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tourlocate Export</title>
+<title>${t('exportTitle')}</title>
 ${leafletCssBlock}
 <style>
   html,body{height:100%;margin:0;font-family:system-ui,sans-serif}
@@ -293,6 +362,7 @@ ${leafletCssBlock}
   #routeinfo{padding:8px 12px;font-weight:600}
   .poi-num{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#2b6cb0;color:#fff;font-weight:700;font-size:13px;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.3)}
   .tl-card{font:12px/1.3 system-ui,sans-serif;display:flex;flex-direction:column;gap:6px}
+  .tl-date{color:#777;font-size:11px}
   button.thumb{padding:0;border:0;background:none;cursor:zoom-in}
   .tl-thumb{width:120px;height:90px;background:#fff;border:1px solid #e6e6e6;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;overflow:hidden}
   .tl-thumb > img{width:100%;height:100%;object-fit:contain;display:block}
@@ -332,12 +402,11 @@ ${leafletJsBlock}
     return 2*6371*Math.asin(Math.sqrt(sa));
   }
   function sumKm(c){ if(!c||c.length<2) return 0; var s=0; for(var i=1;i<c.length;i++) s+=segKm(c[i-1],c[i]); return s; }
-  function formatKm(km){ return (km<10?km.toFixed(2):km.toFixed(1)).replace('.', ',')+' km'; }
   function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
   function init(){
+    var data=JSON.parse(document.getElementById('tl-data').textContent);
     try {
-      var data=JSON.parse(document.getElementById('tl-data').textContent);
       var map=L.map('map').setView([0,0],2);
 
       // Offline-Fallback: Schnappschuss UNTER die Live-Kacheln legen.
@@ -354,9 +423,14 @@ ${leafletJsBlock}
         var icon=L.divIcon({className:'poi-num', html:String(i+1), iconSize:[26,26], iconAnchor:[13,13]});
         var m=L.marker([p.lat,p.lng],{icon:icon}).addTo(markers);
         var title=(i+1)+'. '+(p.name||'Station');
+        var dateHtml='';
+        if (p.createdAt) {
+          var d=new Date(p.createdAt);
+          if (!isNaN(d)) dateHtml='<div class="tl-date">'+esc(d.toLocaleString())+'</div>';
+        }
         var linkHtml=p.link?'<div><a href="'+esc(p.link)+'" target="_blank" rel="noopener">Link</a></div>':'';
-        var imgHtml=p.img?'<div><button type="button" class="thumb" data-img="'+p.img+'" data-title="'+esc(title)+'"><span class="tl-thumb"><img src="'+p.img+'" alt=""></span></button></div>':'';
-        m.bindPopup('<div class="tl-card"><strong>'+esc(title)+'</strong>'+linkHtml+imgHtml+'</div>');
+        var imgHtml=p.img?'<div><button type="button" class="thumb" data-img="'+esc(p.img)+'" data-title="'+esc(title)+'"><span class="tl-thumb"><img src="'+esc(p.img)+'" alt=""></span></button></div>':'';
+        m.bindPopup('<div class="tl-card"><strong>'+esc(title)+'</strong>'+dateHtml+linkHtml+imgHtml+'</div>');
       });
 
       if (Array.isArray(data.ROUTE) && data.ROUTE.length>1) {
@@ -370,10 +444,9 @@ ${leafletJsBlock}
 
       var km=0;
       if (Array.isArray(data.ROUTE) && data.ROUTE.length>1) km=sumKm(data.ROUTE);
-      else if (data.GEO && data.GEO.length>1) km=sumKm(data.GEO.map(function(p){ return [p.lat,p.lng]; }));
-      document.getElementById('routeinfo').textContent = km>0 ? 'Gesamt: '+formatKm(km) : '';
+      document.getElementById('routeinfo').textContent = km>0 ? data.STRINGS.total.replace('{km}', km.toFixed(1)) : '';
     } catch(e) {
-      document.getElementById('map').innerHTML='<div style="padding:12px;color:#b00">Fehler beim Kartenaufbau: '+((e&&e.message)||e)+'</div>';
+      document.getElementById('map').innerHTML='<div style="padding:12px;color:#b00">'+esc(data.STRINGS.mapError)+esc((e&&e.message)||e)+'</div>';
     }
   }
 
@@ -382,7 +455,10 @@ ${leafletJsBlock}
     var s=document.createElement('script');
     s.src='${CDN.leafletJs}';
     s.onload=init;
-    s.onerror=function(){ document.getElementById('map').innerHTML='<div style="padding:12px;color:#b00">Leaflet konnte nicht geladen werden (offline?).</div>'; };
+    s.onerror=function(){
+      var data=JSON.parse(document.getElementById('tl-data').textContent);
+      document.getElementById('map').innerHTML='<div style="padding:12px;color:#b00">'+data.STRINGS.leafletError+'</div>';
+    };
     document.head.appendChild(s);
   }
 })();
@@ -390,5 +466,5 @@ ${leafletJsBlock}
 
 </body></html>`;
 
-  return new Blob([html], { type: 'text/html;charset=utf-8' });
+  return { html, imgFiles };
 }

@@ -1,13 +1,18 @@
-// POI-Logik: Anlegen, Nummerieren, Popups, Löschen, Erstellungsgesten
+// POI-Logik: Anlegen, Nummerieren, Popups, Löschen, Sortieren, Erstellungsgesten
 
 import { setRouteWaypoints } from './map-core.js';
+import { t, formatDateTime } from './map-i18n.js';
 import { openPoiDialog, openLightbox } from './map-ui.js';
 
 // Gemeinsame Fabrik für interaktive Erstellung UND Import.
 // Ruft bewusst NICHT renumberAndRoute auf (Importe arbeiten im Stapel).
-export function createPoi(map, { lat, lng, name = '', link = '', img = '' }) {
+export function createPoi(map, { lat, lng, name = '', link = '', img = '', createdAt = '' }) {
   const marker = L.marker([lat, lng], { draggable: true }).addTo(map.markersLayer);
-  const p = { lat, lng, name, link, img, marker };
+  const p = {
+    lat, lng, name, link, img,
+    createdAt: createdAt || new Date().toISOString(),
+    marker
+  };
 
   marker.on('dragend', e => {
     const ll = e.target.getLatLng();
@@ -25,7 +30,7 @@ export function createPoi(map, { lat, lng, name = '', link = '', img = '' }) {
 // (ohne neues popupopen-Event), dabei bleiben diese Handler erhalten —
 // das behebt den alten "Bearbeiten reagiert nicht"-Bug.
 export function bindPoiPopup(map, p, i) {
-  const title = `${i + 1}. ${p.name || 'Station'}`;
+  const title = `${i + 1}. ${p.name || t('station')}`;
 
   const card = document.createElement('div');
   card.className = 'tl-card';
@@ -37,13 +42,21 @@ export function bindPoiPopup(map, p, i) {
   titleEl.appendChild(strong);
   card.appendChild(titleEl);
 
+  const dateText = p.createdAt ? formatDateTime(p.createdAt) : '';
+  if (dateText) {
+    const dateEl = document.createElement('div');
+    dateEl.className = 'tl-date';
+    dateEl.textContent = dateText;
+    card.appendChild(dateEl);
+  }
+
   if (p.link) {
     const div = document.createElement('div');
     const a = document.createElement('a');
     a.href = p.link;
     a.target = '_blank';
     a.rel = 'noopener';
-    a.textContent = 'Link';
+    a.textContent = t('link');
     div.appendChild(a);
     card.appendChild(div);
   }
@@ -69,7 +82,7 @@ export function bindPoiPopup(map, p, i) {
   const editDiv = document.createElement('div');
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
-  editBtn.textContent = 'Bearbeiten';
+  editBtn.textContent = t('edit');
   editBtn.onclick = ev => {
     ev.stopPropagation();
     openPoiDialog(map, p, 'edit');
@@ -113,6 +126,18 @@ export function removeLastPoi(map) {
 export function clearPois(map) {
   map.state.pois.forEach(p => map.markersLayer.removeLayer(p.marker));
   map.state.pois.length = 0;
+  renumberAndRoute(map);
+}
+
+// Stationen sortieren: key 'name' | 'date', dir 'asc' | 'desc'
+export function sortPois(map, key, dir) {
+  const factor = dir === 'desc' ? -1 : 1;
+  map.state.pois.sort((a, b) => {
+    const cmp = key === 'date'
+      ? String(a.createdAt).localeCompare(String(b.createdAt)) // ISO sortiert lexikografisch
+      : String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' });
+    return cmp * factor;
+  });
   renumberAndRoute(map);
 }
 

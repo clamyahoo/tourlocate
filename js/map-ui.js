@@ -1,8 +1,12 @@
-// UI: Toolbar, Anlegen/Bearbeiten-Dialog, Lightbox, Dateipicker
+// UI: Toolbar, Einstellungen, Anlegen/Bearbeiten-Dialog, Lightbox,
+// Hilfe-Overlay, Vollbild, Dateipicker
 
-import { IMG_MAX_SIDE, IMG_QUALITY } from './map-config.js';
+import { IMG_QUALITIES } from './map-config.js';
+import { getSetting, setSetting } from './map-settings.js';
+import { t, getLang, setLang, applyI18n } from './map-i18n.js';
 import { fileToDataURL } from './map-utils.js';
-import { bindPoiPopup, renumberAndRoute, removePoi, removeLastPoi, clearPois } from './map-pois.js';
+import { applyRoutingSettings, setRouteWaypoints, renderRouteInfo } from './map-core.js';
+import { bindPoiPopup, renumberAndRoute, removePoi, removeLastPoi, clearPois, sortPois } from './map-pois.js';
 
 const $ = id => document.getElementById(id);
 
@@ -35,7 +39,7 @@ function setupFilePicker() {
         }
       } catch (err) {
         console.error('pickImage error:', err);
-        alert('Bild konnte nicht geladen werden: ' + (err?.message || err));
+        alert(t('imageError', { msg: err?.message || err }));
       } finally {
         __pickImageCb = null;
       }
@@ -63,7 +67,6 @@ function ensureLightbox() {
 
   const spinner = document.createElement('div');
   spinner.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:500 14px/1.4 system-ui,sans-serif;color:#ccc';
-  spinner.textContent = 'Lade Bild…';
 
   const img = document.createElement('img');
   img.style.cssText = 'max-width:92vw;max-height:86vh;display:block;margin:0 auto;visibility:hidden';
@@ -97,7 +100,7 @@ function ensureLightbox() {
 export function openLightbox(href, title = '') {
   ensureLightbox();
   LB.spinner.style.display = 'flex';
-  LB.spinner.textContent = 'Lade Bild…';
+  LB.spinner.textContent = t('loadingImage');
   LB.img.style.visibility = 'hidden';
   LB.cap.textContent = title || '';
   LB.overlay.style.display = 'flex';
@@ -121,8 +124,35 @@ export function openLightbox(href, title = '') {
     LB.spinner.style.display = 'none';
     LB.img.style.visibility = 'visible';
   };
-  pre.onerror = () => { LB.spinner.textContent = 'Bild konnte nicht geladen werden.'; };
+  pre.onerror = () => { LB.spinner.textContent = t('imageLoadError'); };
   requestAnimationFrame(() => { pre.src = href; });
+}
+
+// ==================== Hilfe-Overlay ====================
+function openHelp() {
+  document.getElementById('tl-help')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'tl-help';
+  overlay.className = 'tl-help-overlay';
+
+  const box = document.createElement('div');
+  box.className = 'tl-help-box';
+  box.innerHTML = `<h2>${t('helpTitle')}</h2>${t('helpHtml')}`;
+  box.addEventListener('click', ev => ev.stopPropagation());
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'tl-help-close';
+  closeBtn.textContent = '×';
+  closeBtn.onclick = () => overlay.remove();
+  box.prepend(closeBtn);
+
+  overlay.appendChild(box);
+  overlay.addEventListener('click', () => overlay.remove());
+  document.addEventListener('keydown', function esc(e) {
+    if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', esc); }
+  });
+  document.body.appendChild(overlay);
 }
 
 // ==================== Anlegen/Bearbeiten-Dialog ====================
@@ -137,7 +167,7 @@ export function openPoiDialog(map, p, mode) {
 
   const head = document.createElement('div');
   const headStrong = document.createElement('strong');
-  headStrong.textContent = isCreate ? 'Neue Station' : 'Bearbeiten';
+  headStrong.textContent = isCreate ? t('newStation') : t('edit');
   head.appendChild(headStrong);
   c.appendChild(head);
 
@@ -150,8 +180,8 @@ export function openPoiDialog(map, p, mode) {
     c.appendChild(label);
     return input;
   };
-  const nameInput = makeField('Bezeichnung:', p.name || '');
-  const linkInput = makeField('Link (optional):', p.link || '');
+  const nameInput = makeField(t('nameLabel'), p.name || '');
+  const linkInput = makeField(t('linkLabel'), p.link || '');
 
   // Bild-Vorschau
   const thumb = document.createElement('img');
@@ -165,7 +195,7 @@ export function openPoiDialog(map, p, mode) {
   imgBtn.type = 'button';
   const imgDelBtn = document.createElement('button');
   imgDelBtn.type = 'button';
-  imgDelBtn.textContent = 'Bild löschen';
+  imgDelBtn.textContent = t('deleteImage');
   imgRow.append(imgBtn, imgDelBtn);
   c.appendChild(imgRow);
 
@@ -173,12 +203,12 @@ export function openPoiDialog(map, p, mode) {
   actionRow.className = 'tl-form-row';
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
-  saveBtn.textContent = 'Speichern';
+  saveBtn.textContent = t('save');
   actionRow.appendChild(saveBtn);
   if (isCreate) {
     const cancelBtn = document.createElement('button');
     cancelBtn.type = 'button';
-    cancelBtn.textContent = 'Abbrechen';
+    cancelBtn.textContent = t('cancel');
     cancelBtn.onclick = ev => {
       ev.stopPropagation();
       p.marker.closePopup(); // popupclose räumt den frischen POI weg
@@ -187,7 +217,7 @@ export function openPoiDialog(map, p, mode) {
   } else {
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
-    deleteBtn.textContent = 'Station löschen';
+    deleteBtn.textContent = t('deleteStation');
     deleteBtn.className = 'tl-danger';
     deleteBtn.onclick = ev => {
       ev.stopPropagation();
@@ -203,12 +233,12 @@ export function openPoiDialog(map, p, mode) {
       thumb.src = staged.img;
       thumb.style.display = 'block';
       imgDelBtn.style.display = '';
-      imgBtn.textContent = 'Neues Bild';
+      imgBtn.textContent = t('newImage');
     } else {
       thumb.removeAttribute('src');
       thumb.style.display = 'none';
       imgDelBtn.style.display = 'none';
-      imgBtn.textContent = 'Bild wählen…';
+      imgBtn.textContent = t('chooseImage');
     }
   };
 
@@ -238,7 +268,8 @@ export function openPoiDialog(map, p, mode) {
   imgBtn.onclick = ev => {
     ev.stopPropagation();
     pickImage(async file => {
-      staged.img = await fileToDataURL(file, IMG_MAX_SIDE, IMG_QUALITY);
+      const q = IMG_QUALITIES[getSetting('imgQuality')] || IMG_QUALITIES.medium;
+      staged.img = await fileToDataURL(file, q.maxSide, q.quality);
       updateThumb();
     });
   };
@@ -268,26 +299,87 @@ export function openPoiDialog(map, p, mode) {
   setTimeout(() => nameInput.focus(), 0);
 }
 
-// ==================== Toolbar ====================
+// ==================== Toolbar & Einstellungen ====================
 export function setupUI(map) {
   _map = map;
 
   const updateButtons = () => {
     const off = map.state.pois.length === 0;
-    ['undoBtn', 'clearBtn', 'exportGeoBtn', 'exportGpxBtn', 'exportHtmlBtn']
+    ['undoBtn', 'clearBtn', 'exportGeoBtn', 'exportGpxBtn', 'exportHtmlBtn', 'exportZipBtn', 'sortSel']
       .forEach(id => { const el = $(id); if (el) el.disabled = off; });
   };
   map.onPoisChanged = updateButtons;
+
+  const updateLangBtn = () => {
+    // Button zeigt die Sprache, auf die umgeschaltet wird
+    $('langBtn').textContent = getLang() === 'de' ? 'EN' : 'DE';
+  };
+
+  const updateProfileState = () => {
+    // Profil ist nur bei echter Routen-Berechnung relevant
+    $('profileSel').disabled = getSetting('lineMode') !== 'route';
+  };
 
   // onclick-Zuweisung ist idempotent → gefahrlos wiederholbar (bfcache/DDG)
   const bindToolbar = () => {
     $('undoBtn').onclick = () => removeLastPoi(map);
     $('clearBtn').onclick = () => {
-      if (map.state.pois.length && confirm('Alle Stationen löschen?')) {
+      if (map.state.pois.length && confirm(t('confirmClear'))) {
         clearPois(map);
       }
     };
+
+    // Sortierung: Auswahl löst einmalige Sortierung aus
+    $('sortSel').onchange = e => {
+      const [key, dir] = e.target.value.split('-');
+      if (key) sortPois(map, key, dir);
+    };
+
+    // Verbindungsart & Profil
+    $('lineModeSel').onchange = e => {
+      setSetting('lineMode', e.target.value);
+      updateProfileState();
+      setRouteWaypoints(map);
+    };
+    $('profileSel').onchange = e => {
+      setSetting('profile', e.target.value);
+      applyRoutingSettings(map);
+    };
+
+    // Bildqualität
+    $('imgQualitySel').onchange = e => setSetting('imgQuality', e.target.value);
+
+    // Sprache
+    $('langBtn').onclick = () => {
+      setLang(getLang() === 'de' ? 'en' : 'de');
+      updateLangBtn();
+      renumberAndRoute(map);   // Popups (Datum, Buttons) neu aufbauen
+      renderRouteInfo(map);    // Distanz-Text neu formatieren
+    };
+
+    // Vollbild
+    $('fullscreenBtn').onclick = () => {
+      const doc = document;
+      const el = doc.documentElement;
+      if (doc.fullscreenElement || doc.webkitFullscreenElement) {
+        (doc.exitFullscreen || doc.webkitExitFullscreen)?.call(doc);
+      } else {
+        (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
+      }
+    };
+
+    // Hilfe
+    $('helpBtn').onclick = openHelp;
   };
+
+  // Gespeicherte Einstellungen in die Selects übernehmen
+  $('lineModeSel').value = getSetting('lineMode');
+  $('profileSel').value = getSetting('profile');
+  $('imgQualitySel').value = getSetting('imgQuality');
+
+  applyI18n();
+  updateLangBtn();
+  updateProfileState();
   bindToolbar();
   window.addEventListener('pageshow', bindToolbar);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) bindToolbar(); });

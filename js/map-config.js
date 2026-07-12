@@ -28,7 +28,13 @@ export const TILE_LAYERS = {
   })
 };
 
-export const OSRM_SERVICE_URL = 'https://router.project-osrm.org/route/v1';
+// FOSSGIS-OSRM (routing.openstreetmap.de) bietet im Gegensatz zum
+// project-osrm-Demoserver alle drei Profile an.
+export const ROUTING_PROFILES = {
+  car: 'https://routing.openstreetmap.de/routed-car/route/v1',
+  bike: 'https://routing.openstreetmap.de/routed-bike/route/v1',
+  foot: 'https://routing.openstreetmap.de/routed-foot/route/v1'
+};
 
 // Gepinnte CDN-URLs (identisch zu index.html) — werden beim
 // Ein-Datei-HTML-Export gefetcht und in die Exportdatei eingebettet.
@@ -37,12 +43,11 @@ export const CDN = {
   leafletCss: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'
 };
 
-// Bild-Verkleinerung beim Anhängen an POIs
-export const IMG_MAX_SIDE = 1200;
-export const IMG_QUALITY = 0.85;
-
-export const EXPORT_FILES = {
-  geojson: 'tourlocate.geojson',
-  gpx: 'tourlocate.gpx',
-  html: 'tourlocate.html'
+// Bild-Verkleinerung beim Anhängen an POIs, wählbar über die Einstellung
+// "imgQuality" (map-settings.js)
+export const IMG_QUALITIES = {
+  small: { maxSide: 800, quality: 0.7 },
+  medium: { maxSide: 1200, quality: 0.85 },
+  large: { maxSide: 1600, quality: 0.9 },
+  original: { maxSide: 100000, quality: 0.92 }
 };

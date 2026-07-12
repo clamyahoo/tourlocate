@@ -6,10 +6,10 @@ import { openPoiDialog, openLightbox } from './map-ui.js';
 
 // Gemeinsame Fabrik für interaktive Erstellung UND Import.
 // Ruft bewusst NICHT renumberAndRoute auf (Importe arbeiten im Stapel).
-export function createPoi(map, { lat, lng, name = '', link = '', img = '', createdAt = '' }) {
+export function createPoi(map, { lat, lng, name = '', link = '', linkText = '', img = '', createdAt = '' }) {
   const marker = L.marker([lat, lng], { draggable: true }).addTo(map.markersLayer);
   const p = {
-    lat, lng, name, link, img,
+    lat, lng, name, link, linkText, img,
     createdAt: createdAt || new Date().toISOString(),
     marker
   };
@@ -56,7 +56,7 @@ export function bindPoiPopup(map, p, i) {
     a.href = p.link;
     a.target = '_blank';
     a.rel = 'noopener';
-    a.textContent = t('link');
+    a.textContent = p.linkText || t('link');
     div.appendChild(a);
     card.appendChild(div);
   }

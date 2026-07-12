@@ -6,7 +6,10 @@ import { t } from './map-i18n.js';
 import { haversineKm } from './map-utils.js';
 
 export function initMap() {
-  const map = L.map('map').setView([DEFAULT_VIEW.lat, DEFAULT_VIEW.lng], DEFAULT_VIEW.zoom);
+  // Zoom unten rechts — oben links sitzt der Seitenleisten-Knopf
+  const map = L.map('map', { zoomControl: false })
+    .setView([DEFAULT_VIEW.lat, DEFAULT_VIEW.lng], DEFAULT_VIEW.zoom);
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
 
   TILE_LAYERS.OSM.addTo(map);
 

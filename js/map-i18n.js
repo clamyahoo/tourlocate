@@ -32,8 +32,26 @@ const STRINGS = {
     imgMedium: 'mittel',
     imgLarge: 'groß',
     imgOriginal: 'original',
+    language: 'Sprache:',
     fullscreen: 'Vollbild',
     help: 'Hilfe',
+    // Seitenleiste
+    secStations: 'Stationen',
+    secImport: 'Import',
+    secExport: 'Export',
+    secSettings: 'Einstellungen',
+    secWebdav: 'WebDAV-Bilder (z. B. Nextcloud)',
+    // WebDAV
+    webdavUrlLabel: 'Ordner-URL:',
+    webdavUserLabel: 'Benutzer:',
+    webdavPassLabel: 'App-Passwort:',
+    webdavImport: 'Bilder importieren',
+    webdavLoading: 'Lade Bilder… ({done}/{total})',
+    webdavResult: '{imported} Bild(er) importiert, {skipped} übersprungen (ohne GPS-Daten oder Fehler).',
+    webdavNoUrl: 'Bitte zuerst eine WebDAV-Ordner-URL eintragen.',
+    webdavAuthError: 'Anmeldung fehlgeschlagen — Benutzername und App-Passwort prüfen.',
+    webdavCorsError: 'Der WebDAV-Server ist aus dem Browser nicht erreichbar (CORS-Blockade oder Netzwerkfehler). Das klappt nur, wenn Tourlocate auf derselben Domain wie der Server läuft oder der Server CORS-Anfragen erlaubt — Details in der Hilfe.',
+    webdavError: 'WebDAV-Fehler: {msg}',
     // Karte / Routing
     total: 'Gesamt: {km} km',
     routeError: 'Route derzeit nicht verfügbar',
@@ -44,6 +62,7 @@ const STRINGS = {
     edit: 'Bearbeiten',
     nameLabel: 'Bezeichnung:',
     linkLabel: 'Link (optional):',
+    linkTextLabel: 'Link-Beschriftung (optional):',
     chooseImage: 'Bild wählen…',
     newImage: 'Neues Bild',
     deleteImage: 'Bild löschen',
@@ -79,6 +98,10 @@ const STRINGS = {
       <p><strong>GeoJSON</strong> sichert die komplette Tour inkl. Bildern und lässt sich hier wieder importieren. <strong>GPX</strong> enthält Stationen und Strecke und funktioniert auch in anderen Apps (z.&nbsp;B. Komoot). <strong>Ein-Datei-HTML</strong> ist eine eigenständige Karte, die auch ohne Internet funktioniert. <strong>HTML+Bilder (ZIP)</strong> legt die Bilder als eigene Dateien in einen Ordner — besser für große Touren.</p>
       <h3>iPhone &amp; iPad</h3>
       <p>Exportierte Dateien landen in der Dateien-App. GeoJSON/GPX können von dort über „Teilen" wieder importiert werden. Die exportierte <strong>HTML-Datei</strong> lässt sich nicht direkt an Safari übergeben — die Vorschau der Dateien-App zeigt die Karte nur eingeschränkt. Empfehlung: eine App mit eingebautem Browser verwenden (z.&nbsp;B. „Documents" von Readdle) oder die Datei in eine Cloud laden und den Link in Safari öffnen.</p>
+      <h3>WebDAV / Nextcloud</h3>
+      <p>Unter „WebDAV-Bilder" kannst du einen Cloud-Ordner angeben; „Bilder importieren" liest alle Fotos daraus, legt Stationen an den <strong>GPS-Positionen aus den Bild-EXIF-Daten</strong> an und nummeriert sie nach Aufnahmedatum. Fotos ohne GPS-Daten werden übersprungen. Bei Nextcloud: Ordner-URL aus den Dateien-Einstellungen kopieren (endet auf <code>/remote.php/dav/files/BENUTZER/Ordner/</code>) und ein <strong>App-Passwort</strong> anlegen (Einstellungen → Sicherheit) statt des echten Passworts. <strong>Wichtig:</strong> Browser dürfen fremde Server nur ansprechen, wenn diese CORS erlauben — am einfachsten läuft Tourlocate auf derselben Domain wie die Cloud, sonst muss der Server entsprechende Header senden.</p>
+      <h3>Kartenlayer &amp; Bild-Metadaten</h3>
+      <p>Alle Kartenebenen sind frei lizenziert (OSM, CyclOSM, OpenTopoMap: CC-BY-SA; Satellit: Sentinel-2 cloudless von EOX, <strong>CC BY-NC-SA</strong> — nur für nicht-kommerzielle Nutzung). Beim ZIP-Export erhalten die Bilddateien <strong>EXIF-Daten</strong> mit Stationsname, Datum und GPS-Position.</p>
       <h3>DuckDuckGo (Android)</h3>
       <p>Beim Export erscheint unten ein Hinweis „Tippen zum Herunterladen" — das ist normal, der Browser blockiert automatische Downloads.</p>
     `
@@ -111,8 +134,24 @@ const STRINGS = {
     imgMedium: 'medium',
     imgLarge: 'large',
     imgOriginal: 'original',
+    language: 'Language:',
     fullscreen: 'Fullscreen',
     help: 'Help',
+    secStations: 'Stations',
+    secImport: 'Import',
+    secExport: 'Export',
+    secSettings: 'Settings',
+    secWebdav: 'WebDAV images (e.g. Nextcloud)',
+    webdavUrlLabel: 'Folder URL:',
+    webdavUserLabel: 'User:',
+    webdavPassLabel: 'App password:',
+    webdavImport: 'Import images',
+    webdavLoading: 'Loading images… ({done}/{total})',
+    webdavResult: '{imported} image(s) imported, {skipped} skipped (no GPS data or error).',
+    webdavNoUrl: 'Please enter a WebDAV folder URL first.',
+    webdavAuthError: 'Authentication failed — check username and app password.',
+    webdavCorsError: 'The WebDAV server cannot be reached from the browser (CORS blocked or network error). This only works when Tourlocate runs on the same domain as the server, or the server allows CORS requests — see Help for details.',
+    webdavError: 'WebDAV error: {msg}',
     total: 'Total: {km} km',
     routeError: 'Route currently unavailable',
     searchPlaceholder: 'Search place…',
@@ -121,6 +160,7 @@ const STRINGS = {
     edit: 'Edit',
     nameLabel: 'Name:',
     linkLabel: 'Link (optional):',
+    linkTextLabel: 'Link label (optional):',
     chooseImage: 'Choose image…',
     newImage: 'New image',
     deleteImage: 'Delete image',
@@ -152,6 +192,10 @@ const STRINGS = {
       <p><strong>GeoJSON</strong> saves the complete tour including images and can be re-imported here. <strong>GPX</strong> contains stations and track and also works in other apps (e.g. Komoot). <strong>Single-file HTML</strong> is a self-contained map that also works offline. <strong>HTML+images (ZIP)</strong> stores images as separate files in a folder — better for large tours.</p>
       <h3>iPhone &amp; iPad</h3>
       <p>Exported files end up in the Files app. GeoJSON/GPX can be re-imported from there via "Share". The exported <strong>HTML file</strong> cannot be handed to Safari directly — the Files app preview shows the map only partially. Recommendation: use an app with a built-in browser (e.g. "Documents" by Readdle) or upload the file to a cloud and open the link in Safari.</p>
+      <h3>WebDAV / Nextcloud</h3>
+      <p>Under "WebDAV images" you can point to a cloud folder; "Import images" reads all photos, creates stations at the <strong>GPS positions from the photos' EXIF data</strong> and numbers them by capture date. Photos without GPS data are skipped. For Nextcloud: copy the folder URL from the Files settings (ends in <code>/remote.php/dav/files/USER/folder/</code>) and create an <strong>app password</strong> (Settings → Security) instead of your real password. <strong>Important:</strong> browsers may only contact other servers if they allow CORS — easiest is running Tourlocate on the same domain as the cloud; otherwise the server must send the appropriate headers.</p>
+      <h3>Map layers &amp; image metadata</h3>
+      <p>All map layers are freely licensed (OSM, CyclOSM, OpenTopoMap: CC-BY-SA; satellite: Sentinel-2 cloudless by EOX, <strong>CC BY-NC-SA</strong> — non-commercial use only). On ZIP export, the image files receive <strong>EXIF data</strong> with station name, date and GPS position.</p>
       <h3>DuckDuckGo (Android)</h3>
       <p>On export, a "Tap to download" note appears at the bottom — this is normal, the browser blocks automatic downloads.</p>
     `

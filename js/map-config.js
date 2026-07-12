@@ -8,22 +8,32 @@ export const DEFAULT_VIEW = {
 
 // crossOrigin ist Voraussetzung dafür, dass Kacheln beim HTML-Export
 // in ein Canvas gezeichnet werden dürfen (sonst "tainted canvas").
+// Nur frei lizenzierte Layer: OSM-Standard (ODbL/CC-BY-SA), CyclOSM
+// (CC-BY-SA), OpenTopoMap (CC-BY-SA) und Sentinel-2 cloudless von EOX
+// (CC BY-NC-SA 4.0 — frei für nicht-kommerzielle Nutzung). Der frühere
+// Esri-World-Imagery-Layer war proprietär und wurde entfernt.
 export const TILE_LAYERS = {
   OSM: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    attribution: '© OpenStreetMap',
+    attribution: '© OpenStreetMap-Mitwirkende',
     crossOrigin: 'anonymous'
   }),
 
-  Satellit: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  CyclOSM: L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    attribution: 'Tiles © Esri',
+    attribution: '© CyclOSM, © OpenStreetMap-Mitwirkende',
     crossOrigin: 'anonymous'
   }),
 
   Topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
     maxZoom: 17,
-    attribution: '© OpenTopoMap, © OSM',
+    attribution: '© OpenTopoMap (CC-BY-SA), © OpenStreetMap-Mitwirkende',
+    crossOrigin: 'anonymous'
+  }),
+
+  Satellit: L.tileLayer('https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg', {
+    maxZoom: 15,
+    attribution: 'Sentinel-2 cloudless © EOX IT Services GmbH (CC BY-NC-SA 4.0), Copernicus-Daten',
     crossOrigin: 'anonymous'
   })
 };

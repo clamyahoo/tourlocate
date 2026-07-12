@@ -7,6 +7,7 @@ import { t, getLang, setLang, applyI18n } from './map-i18n.js';
 import { fileToDataURL } from './map-utils.js';
 import { applyRoutingSettings, setRouteWaypoints, renderRouteInfo } from './map-core.js';
 import { bindPoiPopup, renumberAndRoute, removePoi, removeLastPoi, clearPois, sortPois } from './map-pois.js';
+import { importFromWebdav, webdavErrorMessage } from './map-webdav.js';
 
 const $ = id => document.getElementById(id);
 
@@ -182,6 +183,7 @@ export function openPoiDialog(map, p, mode) {
   };
   const nameInput = makeField(t('nameLabel'), p.name || '');
   const linkInput = makeField(t('linkLabel'), p.link || '');
+  const linkTextInput = makeField(t('linkTextLabel'), p.linkText || '');
 
   // Bild-Vorschau
   const thumb = document.createElement('img');
@@ -257,6 +259,7 @@ export function openPoiDialog(map, p, mode) {
     p.marker.off('popupclose', onPopupClose);
     p.name = nameInput.value.trim();
     p.link = linkInput.value.trim();
+    p.linkText = linkTextInput.value.trim();
     p.img = staged.img;
     bindPoiPopup(map, p, map.state.pois.indexOf(p));
     renumberAndRoute(map);
@@ -372,6 +375,48 @@ export function setupUI(map) {
     $('helpBtn').onclick = openHelp;
   };
 
+  // ==================== Seitenleiste ====================
+  const setSidebar = open => {
+    document.body.classList.toggle('sidebar-closed', !open);
+    setSetting('sidebar', open ? 'open' : 'closed');
+    // Leaflet an die neue Kartenbreite anpassen (nach der CSS-Transition)
+    setTimeout(() => map.invalidateSize(), 250);
+  };
+  const stored = getSetting('sidebar');
+  const initialOpen = stored ? stored === 'open' : window.innerWidth > 720;
+  document.body.classList.toggle('sidebar-closed', !initialOpen);
+  $('sidebarToggle').onclick = () => setSidebar(document.body.classList.contains('sidebar-closed'));
+  $('sidebarClose').onclick = () => setSidebar(false);
+
+  // ==================== WebDAV ====================
+  const bindWebdav = () => {
+    [['webdavUrlInp', 'webdavUrl'], ['webdavUserInp', 'webdavUser'], ['webdavPassInp', 'webdavPass']]
+      .forEach(([id, key]) => {
+        const inp = $(id);
+        inp.value = getSetting(key);
+        inp.onchange = () => setSetting(key, inp.value.trim());
+      });
+
+    $('webdavImportBtn').onclick = async () => {
+      const btn = $('webdavImportBtn');
+      const ri = $('routeinfo');
+      const prev = ri.textContent;
+      btn.disabled = true;
+      try {
+        const result = await importFromWebdav(map, (done, total) => {
+          ri.textContent = t('webdavLoading', { done, total });
+        });
+        ri.textContent = prev;
+        alert(t('webdavResult', { imported: result.imported, skipped: result.skipped }));
+      } catch (e) {
+        ri.textContent = prev;
+        alert(webdavErrorMessage(e));
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  };
+
   // Gespeicherte Einstellungen in die Selects übernehmen
   $('lineModeSel').value = getSetting('lineMode');
   $('profileSel').value = getSetting('profile');
@@ -381,6 +426,7 @@ export function setupUI(map) {
   updateLangBtn();
   updateProfileState();
   bindToolbar();
+  bindWebdav();
   window.addEventListener('pageshow', bindToolbar);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) bindToolbar(); });
 

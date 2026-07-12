@@ -9,6 +9,7 @@ import {
   dataURLToBytes, buildZipBlob
 } from './map-utils.js';
 import { createPoi, renumberAndRoute } from './map-pois.js';
+import { writeExif } from './map-exif.js';
 
 const $ = id => document.getElementById(id);
 
@@ -51,7 +52,7 @@ export function buildGeoJSONBlob(map) {
     type: 'FeatureCollection',
     features: map.state.pois.map((p, i) => ({
       type: 'Feature',
-      properties: { index: i + 1, name: p.name, link: p.link, img: p.img, createdAt: p.createdAt || '' },
+      properties: { index: i + 1, name: p.name, link: p.link, linkText: p.linkText || '', img: p.img, createdAt: p.createdAt || '' },
       geometry: { type: 'Point', coordinates: [p.lng, p.lat] }
     }))
   };
@@ -143,6 +144,7 @@ function importFeatures(map, gj, { namesOnly }) {
     added.push(createPoi(map, {
       lat, lng, name,
       link: namesOnly ? '' : (ft.properties?.link || ''),
+      linkText: namesOnly ? '' : (ft.properties?.linkText || ''),
       img: namesOnly ? '' : (ft.properties?.img || ''),
       // GPX-<time> landet bei togeojson in properties.time
       createdAt: ft.properties?.createdAt || ft.properties?.time || ''
@@ -171,7 +173,14 @@ async function exportHtml(map, { zip }) {
 
     if (zip) {
       const files = [{ name: 'tourlocate.html', data: new TextEncoder().encode(html) }];
-      imgFiles.forEach(f => files.push({ name: f.name, data: dataURLToBytes(f.dataUrl) }));
+      // Bilddateien bekommen EXIF-Daten: Stationsname, Datum, GPS-Position
+      // (das Canvas-Re-Encoding beim Anhängen hatte sie entfernt)
+      imgFiles.forEach(f => files.push({
+        name: f.name,
+        data: writeExif(dataURLToBytes(f.dataUrl), {
+          lat: f.lat, lng: f.lng, dateIso: f.createdAt, description: f.poiName
+        })
+      }));
       triggerBlobDownload(exportFilename('zip'), buildZipBlob(files));
     } else {
       triggerBlobDownload(exportFilename('html'), new Blob([html], { type: 'text/html;charset=utf-8' }));
@@ -318,12 +327,15 @@ function buildExportHtml(map, snapshot, assets, { imageFolder }) {
     let img = p.img || '';
     if (img && imageFolder) {
       const name = 'bilder/station-' + String(i + 1).padStart(2, '0') + '.jpg';
-      imgFiles.push({ name, dataUrl: img });
+      imgFiles.push({
+        name, dataUrl: img,
+        lat: p.lat, lng: p.lng, createdAt: p.createdAt || '', poiName: p.name || ''
+      });
       img = name; // relative Referenz in der HTML
     }
     return {
       lat: p.lat, lng: p.lng,
-      name: p.name || '', link: p.link || '', img,
+      name: p.name || '', link: p.link || '', linkText: p.linkText || '', img,
       createdAt: p.createdAt || ''
     };
   });
@@ -428,7 +440,7 @@ ${leafletJsBlock}
           var d=new Date(p.createdAt);
           if (!isNaN(d)) dateHtml='<div class="tl-date">'+esc(d.toLocaleString())+'</div>';
         }
-        var linkHtml=p.link?'<div><a href="'+esc(p.link)+'" target="_blank" rel="noopener">Link</a></div>':'';
+        var linkHtml=p.link?'<div><a href="'+esc(p.link)+'" target="_blank" rel="noopener">'+esc(p.linkText||'Link')+'</a></div>':'';
         var imgHtml=p.img?'<div><button type="button" class="thumb" data-img="'+esc(p.img)+'" data-title="'+esc(title)+'"><span class="tl-thumb"><img src="'+esc(p.img)+'" alt=""></span></button></div>':'';
         m.bindPopup('<div class="tl-card"><strong>'+esc(title)+'</strong>'+dateHtml+linkHtml+imgHtml+'</div>');
       });

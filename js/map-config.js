@@ -61,3 +61,9 @@ export const IMG_QUALITIES = {
   large: { maxSide: 1600, quality: 0.9 },
   original: { maxSide: 100000, quality: 0.92 }
 };
+
+// Geteiltes Geheimnis mit webdav-proxy.php (bremst automatisierte
+// Scanner; kein Ersatz für echte Zugriffskontrolle, da der Wert im
+// öffentlichen JS-Quelltext steht). Bei Änderung IMMER auch in
+// webdav-proxy.php (Konstante PROXY_KEY) anpassen.
+export const PROXY_KEY = 'tourlocate-webdav-2026-BITTE-AENDERN';

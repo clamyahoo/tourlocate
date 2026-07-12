@@ -1,12 +1,13 @@
 // WebDAV-Import (z. B. Nextcloud): alle Bilder eines Ordners laden,
 // EXIF-Position/-Datum auslesen und als Stationen auf die Karte bringen.
 //
-// Hinweis CORS: Der Browser kann nur dann auf einen fremden WebDAV-Server
-// zugreifen, wenn dieser CORS-Header sendet oder Tourlocate auf derselben
-// Domain läuft. Nextcloud erlaubt das von Haus aus nicht — die Fehlermeldung
-// weist darauf hin (Details im Hilfetext).
+// Der Zugriff läuft über webdav-proxy.php auf demselben Server: Browser
+// dürfen fremde WebDAV-Server aus Sicherheitsgründen (CORS) nicht direkt
+// ansprechen. Das PHP-Skript übernimmt die eigentliche Anfrage
+// serverseitig (dafür gilt CORS nicht) und reicht die Antwort durch.
+// Erfordert PHP-fähiges Hosting — webdav-proxy.php muss mit hochgeladen sein.
 
-import { IMG_QUALITIES } from './map-config.js';
+import { IMG_QUALITIES, PROXY_KEY } from './map-config.js';
 import { getSetting } from './map-settings.js';
 import { t } from './map-i18n.js';
 import { fileToDataURL } from './map-utils.js';
@@ -15,33 +16,31 @@ import { createPoi, sortPois } from './map-pois.js';
 import { fitToMarkers } from './map-core.js';
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|hei[cf])$/i;
+const PROXY_URL = 'webdav-proxy.php';
 
-function authHeaders() {
-  const user = getSetting('webdavUser');
-  const pass = getSetting('webdavPass');
-  const h = {};
-  if (user) {
-    // btoa verträgt kein Unicode → vorher UTF-8-encodieren
-    const raw = `${user}:${pass}`;
-    h.Authorization = 'Basic ' + btoa(String.fromCharCode(...new TextEncoder().encode(raw)));
-  }
-  return h;
+// Anfrage über den Server-Proxy schicken (kein direkter Cross-Origin-
+// Zugriff aus dem Browser). Wirft 'auth' bei 401/403 von der Gegenstelle,
+// 'proxy' bei Fehlern im Proxy selbst (erkennbar am X-Proxy-Error-Header).
+async function proxyFetch(action, url) {
+  const res = await fetch(PROXY_URL, {
+    method: 'POST',
+    body: new URLSearchParams({
+      action,
+      url,
+      user: getSetting('webdavUser'),
+      pass: getSetting('webdavPass'),
+      key: PROXY_KEY
+    })
+  });
+  if (res.headers.get('X-Proxy-Error')) throw new Error('proxy');
+  if (res.status === 401 || res.status === 403) throw new Error('auth');
+  if (!res.ok) throw new Error('http ' + res.status);
+  return res;
 }
 
 // Ordner auflisten → Bild-URLs
 async function listImages(baseUrl) {
-  const res = await fetch(baseUrl, {
-    method: 'PROPFIND',
-    headers: {
-      ...authHeaders(),
-      Depth: '1',
-      'Content-Type': 'application/xml'
-    },
-    body: '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>'
-  });
-  if (res.status === 401 || res.status === 403) throw new Error('auth');
-  if (!res.ok) throw new Error('http ' + res.status);
-
+  const res = await proxyFetch('list', baseUrl);
   const xml = new DOMParser().parseFromString(await res.text(), 'application/xml');
   // Namespace-tolerant: getElementsByTagNameNS mit DAV:
   const responses = xml.getElementsByTagNameNS('DAV:', 'href');
@@ -63,14 +62,7 @@ export async function importFromWebdav(map, onProgress) {
   const baseUrl = (getSetting('webdavUrl') || '').trim();
   if (!baseUrl) throw new Error('nourl');
 
-  let urls;
-  try {
-    urls = await listImages(baseUrl);
-  } catch (e) {
-    // fetch wirft TypeError bei Netzwerk-/CORS-Blockade
-    if (e instanceof TypeError) throw new Error('cors');
-    throw e;
-  }
+  const urls = await listImages(baseUrl);
 
   const q = IMG_QUALITIES[getSetting('imgQuality')] || IMG_QUALITIES.medium;
   let imported = 0;
@@ -80,8 +72,7 @@ export async function importFromWebdav(map, onProgress) {
   for (let i = 0; i < urls.length; i++) {
     onProgress?.(i, urls.length);
     try {
-      const res = await fetch(urls[i], { headers: authHeaders() });
-      if (!res.ok) { skipped++; continue; }
+      const res = await proxyFetch('get', urls[i]);
       const blob = await res.blob();
       const exif = readExif(await blob.arrayBuffer());
       if (exif.lat == null || exif.lng == null) { skipped++; continue; }
@@ -118,6 +109,6 @@ export function webdavErrorMessage(e) {
   const msg = e?.message || String(e);
   if (msg === 'nourl') return t('webdavNoUrl');
   if (msg === 'auth') return t('webdavAuthError');
-  if (msg === 'cors') return t('webdavCorsError');
+  if (msg === 'proxy') return t('webdavProxyError');
   return t('webdavError', { msg });
 }

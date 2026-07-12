@@ -8,6 +8,7 @@ import { fileToDataURL } from './map-utils.js';
 import { applyRoutingSettings, setRouteWaypoints, renderRouteInfo } from './map-core.js';
 import { bindPoiPopup, renumberAndRoute, removePoi, removeLastPoi, clearPois, sortPois } from './map-pois.js';
 import { importFromWebdav, webdavErrorMessage } from './map-webdav.js';
+import { importPhotoFiles } from './map-photos.js';
 
 const $ = id => document.getElementById(id);
 
@@ -388,6 +389,56 @@ export function setupUI(map) {
   $('sidebarToggle').onclick = () => setSidebar(document.body.classList.contains('sidebar-closed'));
   $('sidebarClose').onclick = () => setSidebar(false);
 
+  // ==================== Lokaler Foto-Import (Auswahl + Drag & Drop) ====================
+  // Läuft die Verarbeitung, zeigt #routeinfo den Fortschritt; danach Ergebnis-Meldung.
+  const runPhotoImport = async files => {
+    const ri = $('routeinfo');
+    const prev = ri.textContent;
+    try {
+      const result = await importPhotoFiles(map, files, (done, total) => {
+        ri.textContent = t('photoLoading', { done, total });
+      });
+      ri.textContent = prev;
+      if (result.total === 0) alert(t('photoNone'));
+      else alert(t('photoResult', { imported: result.imported, skipped: result.skipped }));
+    } catch (e) {
+      ri.textContent = prev;
+      console.error('Foto-Import fehlgeschlagen:', e);
+    }
+  };
+
+  const bindPhotos = () => {
+    $('importPhotosBtn').onclick = () => { const f = $('filePhotos'); f.value = ''; f.click(); };
+    $('filePhotos').onchange = e => { if (e.target.files.length) runPhotoImport(e.target.files); };
+  };
+
+  // Drag & Drop über die gesamte Karte. dragenter/leave werden gezählt,
+  // weil sie bei jedem Kindelement erneut feuern (sonst flackert das Overlay).
+  const setupDragDrop = () => {
+    const mapEl = map.getContainer();
+    let depth = 0;
+    const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+
+    mapEl.addEventListener('dragenter', e => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth++;
+      document.body.classList.add('dragging-photos');
+    });
+    mapEl.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+    mapEl.addEventListener('dragleave', () => {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) document.body.classList.remove('dragging-photos');
+    });
+    mapEl.addEventListener('drop', e => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      document.body.classList.remove('dragging-photos');
+      if (e.dataTransfer.files.length) runPhotoImport(e.dataTransfer.files);
+    });
+  };
+
   // ==================== WebDAV ====================
   const bindWebdav = () => {
     [['webdavUrlInp', 'webdavUrl'], ['webdavUserInp', 'webdavUser'], ['webdavPassInp', 'webdavPass']]
@@ -427,6 +478,8 @@ export function setupUI(map) {
   updateProfileState();
   bindToolbar();
   bindWebdav();
+  bindPhotos();
+  setupDragDrop();
   window.addEventListener('pageshow', bindToolbar);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) bindToolbar(); });
 

@@ -50,7 +50,8 @@ export const ROUTING_PROFILES = {
 // Ein-Datei-HTML-Export gefetcht und in die Exportdatei eingebettet.
 export const CDN = {
   leafletJs: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
-  leafletCss: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'
+  leafletCss: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css',
+  heic2any: 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js'
 };
 
 // Bild-Verkleinerung beim Anhängen an POIs, wählbar über die Einstellung

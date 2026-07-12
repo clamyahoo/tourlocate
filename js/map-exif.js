@@ -6,14 +6,27 @@
 // ==================== Lesen ====================
 
 // Liefert { lat, lng, date } — Felder sind null, wenn nicht vorhanden.
+// Versteht JPEG (APP1/Exif) und HEIC/HEIF (ISOBMFF mit Exif-Item).
 export function readExif(arrayBuffer) {
   const out = { lat: null, lng: null, date: null };
   const view = new DataView(arrayBuffer);
-  if (view.byteLength < 4 || view.getUint16(0) !== 0xFFD8) return out; // kein JPEG
+  if (view.byteLength < 12) return out;
 
-  // APP1-Segment mit "Exif\0\0" suchen
-  let offset = 2;
   let tiffStart = -1;
+  if (view.getUint16(0) === 0xFFD8) {
+    tiffStart = findJpegTiffStart(view);        // JPEG
+  } else if (view.getUint32(4) === 0x66747970) {
+    tiffStart = findHeicTiffStart(view);        // 'ftyp' → HEIC/HEIF/AVIF
+  }
+  if (tiffStart < 0) return out;
+
+  parseTiffExif(view, tiffStart, out);
+  return out;
+}
+
+// JPEG: APP1-Segment mit "Exif\0\0" suchen, liefert Offset des TIFF-Headers
+function findJpegTiffStart(view) {
+  let offset = 2;
   while (offset + 4 <= view.byteLength) {
     if (view.getUint8(offset) !== 0xFF) break;
     const marker = view.getUint8(offset + 1);
@@ -22,13 +35,119 @@ export function readExif(arrayBuffer) {
     if (marker === 0xE1 &&
         view.getUint32(offset + 4) === 0x45786966 /* "Exif" */ &&
         view.getUint16(offset + 8) === 0) {
-      tiffStart = offset + 10;
-      break;
+      return offset + 10;
     }
     offset += 2 + size;
   }
-  if (tiffStart < 0) return out;
+  return -1;
+}
 
+// HEIC/HEIF: ISOBMFF-Boxen bis zum Exif-Item verfolgen, dann im
+// Item-Payload den TIFF-Header (II*/MM*) finden.
+function findHeicTiffStart(view) {
+  const len = view.byteLength;
+
+  // Top-Level-Boxen durchgehen, 'meta' finden
+  let metaStart = -1, metaEnd = -1;
+  for (let p = 0; p + 8 <= len;) {
+    let size = view.getUint32(p);
+    const type = view.getUint32(p + 4);
+    let header = 8;
+    if (size === 1) { size = view.getUint32(p + 12); header = 16; } // 64-bit (obere 32 Bit ignoriert, Dateien <4 GB)
+    else if (size === 0) { size = len - p; }
+    if (type === 0x6d657461 /* 'meta' */) { metaStart = p + header; metaEnd = p + size; break; }
+    if (size < 8) break;
+    p += size;
+  }
+  if (metaStart < 0) return -1;
+
+  // meta ist FullBox → 4 Byte version/flags überspringen; iinf + iloc suchen
+  let exifItemId = -1, ilocStart = -1;
+  for (let mp = metaStart + 4; mp + 8 <= metaEnd;) {
+    let size = view.getUint32(mp);
+    const type = view.getUint32(mp + 4);
+    let header = 8;
+    if (size === 1) { size = view.getUint32(mp + 12); header = 16; }
+    else if (size === 0) { size = metaEnd - mp; }
+    if (type === 0x69696e66 /* 'iinf' */) exifItemId = findExifItemId(view, mp + header, mp + size);
+    else if (type === 0x696c6f63 /* 'iloc' */) ilocStart = mp + header;
+    if (size < 8) break;
+    mp += size;
+  }
+  if (exifItemId < 0 || ilocStart < 0) return -1;
+
+  const payloadOffset = findItemOffset(view, ilocStart, exifItemId);
+  if (payloadOffset < 0) return -1;
+
+  // Der Exif-Payload beginnt mit einem 4-Byte-Offset auf den TIFF-Header;
+  // robuster ist, das TIFF-Magic direkt zu suchen.
+  for (let i = payloadOffset; i < Math.min(payloadOffset + 64, len - 4); i++) {
+    const m = view.getUint32(i);
+    if (m === 0x49492a00 /* II*\0 */ || m === 0x4d4d002a /* MM\0* */) return i;
+  }
+  return -1;
+}
+
+// iinf durchgehen, item_ID des 'Exif'-Items zurückgeben
+function findExifItemId(view, start, end) {
+  const version = view.getUint8(start);
+  let p = start + 4 + 2; // version/flags + entry_count(u16)
+  while (p + 8 <= end) {
+    const size = view.getUint32(p);
+    const type = view.getUint32(p + 4);
+    if (size < 8) break;
+    if (type === 0x696e6665 /* 'infe' */) {
+      const infeVer = view.getUint8(p + 8);
+      let ip = p + 12; // FullBox-Header
+      let itemId;
+      if (infeVer >= 3) { itemId = view.getUint32(ip); ip += 4; }
+      else { itemId = view.getUint16(ip); ip += 2; }
+      ip += 2; // item_protection_index
+      if (view.getUint32(ip) === 0x45786966 /* 'Exif' */) return itemId;
+    }
+    p += size;
+  }
+  return -1;
+}
+
+// iloc durchgehen, Datei-Offset des Payloads für item_ID zurückgeben
+function findItemOffset(view, start, wantedId) {
+  const version = view.getUint8(start);
+  let p = start + 4;
+  const b0 = view.getUint8(p), b1 = view.getUint8(p + 1); p += 2;
+  const offsetSize = (b0 >> 4) & 0xF;
+  const lengthSize = b0 & 0xF;
+  const baseOffsetSize = (b1 >> 4) & 0xF;
+  const indexSize = (version === 1 || version === 2) ? (b1 & 0xF) : 0;
+
+  let itemCount;
+  if (version < 2) { itemCount = view.getUint16(p); p += 2; }
+  else { itemCount = view.getUint32(p); p += 4; }
+
+  const readN = n => { let v = 0; for (let i = 0; i < n; i++) v = v * 256 + view.getUint8(p + i); p += n; return v; };
+
+  for (let i = 0; i < itemCount; i++) {
+    let itemId;
+    if (version < 2) { itemId = view.getUint16(p); p += 2; }
+    else { itemId = view.getUint32(p); p += 4; }
+    if (version === 1 || version === 2) p += 2; // construction_method (nur file offset unterstützt)
+    p += 2; // data_reference_index
+    const baseOffset = readN(baseOffsetSize);
+    const extentCount = view.getUint16(p); p += 2;
+    let firstExtent = -1;
+    for (let j = 0; j < extentCount; j++) {
+      if (indexSize > 0) readN(indexSize);
+      const extOffset = readN(offsetSize);
+      readN(lengthSize); // Länge nicht benötigt
+      if (j === 0) firstExtent = baseOffset + extOffset;
+    }
+    if (itemId === wantedId) return firstExtent;
+  }
+  return -1;
+}
+
+// TIFF-Block ab tiffStart parsen und lat/lng/date in out schreiben
+function parseTiffExif(view, tiffStart, out) {
   const little = view.getUint16(tiffStart) === 0x4949; // "II" = little endian
   const u16 = o => view.getUint16(tiffStart + o, little);
   const u32 = o => view.getUint32(tiffStart + o, little);
@@ -106,7 +225,6 @@ export function readExif(arrayBuffer) {
   } catch (e) {
     console.warn('EXIF-Parsing fehlgeschlagen:', e);
   }
-  return out;
 }
 
 // ==================== Schreiben ====================

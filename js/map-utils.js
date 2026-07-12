@@ -1,6 +1,44 @@
 // Generische Helfer: Dateien, Bilder, Downloads, Escaping, Distanz, ZIP
 
 import { t } from './map-i18n.js';
+import { CDN } from './map-config.js';
+
+// HEIC/HEIF → JPEG-Blob über ein frisches, verstecktes iframe pro Bild.
+// heic2any teilt sich einen globalen WASM-Zustand, der ab dem zweiten
+// Aufruf im selben Kontext hängen bleibt (ein Batch-Import würde ab dem
+// zweiten Foto blockieren). Ein Web Worker scheitert, weil heic2any ein
+// <canvas> (also `document`) braucht. Ein iframe hat sein eigenes
+// window/document samt Canvas und eine eigene, frische WASM-Instanz;
+// nach der Konvertierung wird es zerstört → sauberer Zustand pro Bild.
+function heicToJpegBlob(file, quality) {
+  return new Promise((resolve, reject) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    // srcdoc-iframe erbt den Origin → postMessage-Austausch mit dem Parent
+    iframe.srcdoc =
+      '<script src="' + CDN.heic2any + '"></scr' + 'ipt><script>' +
+      'window.addEventListener("message",async function(e){' +
+      '  try{' +
+      '    var out=await heic2any({blob:e.data.blob,toType:"image/jpeg",quality:e.data.quality});' +
+      '    parent.postMessage({tlHeic:true,ok:true,blob:Array.isArray(out)?out[0]:out},"*");' +
+      '  }catch(err){ parent.postMessage({tlHeic:true,ok:false,error:String(err&&err.message||err)},"*"); }' +
+      '});' +
+      'parent.postMessage({tlHeic:true,ready:true},"*");' +
+      '</scr' + 'ipt>';
+
+    const cleanup = () => { clearTimeout(to); window.removeEventListener('message', onMsg); iframe.remove(); };
+    const onMsg = e => {
+      if (e.source !== iframe.contentWindow || !e.data || !e.data.tlHeic) return;
+      if (e.data.ready) { iframe.contentWindow.postMessage({ blob: file, quality }, '*'); return; }
+      const ok = e.data.ok, payload = e.data.blob, err = e.data.error;
+      cleanup();
+      ok ? resolve(payload) : reject(new Error(err || 'HEIC-Konvertierung fehlgeschlagen'));
+    };
+    const to = setTimeout(() => { cleanup(); reject(new Error('heic-timeout')); }, 30000);
+    window.addEventListener('message', onMsg);
+    document.body.appendChild(iframe);
+  });
+}
 
 // Datei einlesen (Textinhalt)
 export function readFileAsText(file) {
@@ -48,17 +86,13 @@ export function haversineKm(coords) {
 
 // =============== Bild → verkleinertes JPEG als DataURL ===============
 // DDG-stabil: DataURL (FileReader) zuerst, dann Fallbacks.
-// HEIC/HEIF wird vorab per heic2any nach JPEG konvertiert.
+// HEIC/HEIF wird vorab (im Worker) nach JPEG konvertiert.
 export async function fileToDataURL(file, maxSide = 1200, quality = 0.85) {
   let src = file;
 
   const isHeic = /image\/hei[cf]/.test(file.type || '') || /\.hei[cf]$/i.test(file.name || '');
   if (isHeic) {
-    if (typeof heic2any === 'undefined') {
-      throw new Error(t('heicUnavailable'));
-    }
-    src = await heic2any({ blob: file, toType: 'image/jpeg', quality });
-    if (Array.isArray(src)) src = src[0]; // heic2any kann mehrere Blobs liefern
+    src = await heicToJpegBlob(file, quality);
   }
 
   const drawScaled = (img, w, h) => {

@@ -31,8 +31,11 @@ export const TILE_LAYERS = {
     crossOrigin: 'anonymous'
   }),
 
-  Satellit: L.tileLayer('https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg', {
-    maxZoom: 15,
+  // maxZoom bewusst auf 14 begrenzt: die Quelldaten lösen mit 10 m/Pixel
+  // auf, bei Zoom 15 würde der Server nur noch hochinterpolieren (wirkt
+  // unscharf statt schärfer).
+  Satellit: L.tileLayer('https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg', {
+    maxZoom: 14,
     attribution: 'Sentinel-2 cloudless © EOX IT Services GmbH (CC BY-NC-SA 4.0), Copernicus-Daten',
     crossOrigin: 'anonymous'
   })

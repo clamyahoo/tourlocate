@@ -272,9 +272,22 @@ export function openPoiDialog(map, p, mode) {
   imgBtn.onclick = ev => {
     ev.stopPropagation();
     pickImage(async file => {
-      const q = IMG_QUALITIES[getSetting('imgQuality')] || IMG_QUALITIES.medium;
-      staged.img = await fileToDataURL(file, q.maxSide, q.quality);
-      updateThumb();
+      imgBtn.disabled = true;
+      try {
+        // Server-Modus (Editor): Bild verkleinern + hochladen → URL.
+        // Sonst (statische App): Base64-DataURL wie gehabt.
+        if (typeof map.imageStore === 'function') {
+          staged.img = await map.imageStore(file, { lat: p.lat, lng: p.lng });
+        } else {
+          const q = IMG_QUALITIES[getSetting('imgQuality')] || IMG_QUALITIES.medium;
+          staged.img = await fileToDataURL(file, q.maxSide, q.quality);
+        }
+        updateThumb();
+      } catch (e) {
+        alert(t('imageError', { msg: e?.message || e }));
+      } finally {
+        imgBtn.disabled = false;
+      }
     });
   };
 

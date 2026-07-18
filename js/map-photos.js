@@ -33,12 +33,16 @@ export async function importPhotoFiles(map, files, onProgress) {
       const exif = readExif(await f.arrayBuffer());
       if (exif.lat == null || exif.lng == null) { skipped++; continue; }
 
-      const dataUrl = await fileToDataURL(f, q.maxSide, q.quality);
+      // Server-Modus (Editor): Bild verkleinern + hochladen → URL.
+      // Sonst (statische App): Base64-DataURL wie gehabt.
+      const img = (typeof map.imageStore === 'function')
+        ? await map.imageStore(f, { lat: exif.lat, lng: exif.lng, date: exif.date })
+        : await fileToDataURL(f, q.maxSide, q.quality);
       added.push(createPoi(map, {
         lat: exif.lat,
         lng: exif.lng,
         name: f.name.replace(/\.[^.]+$/, ''),
-        img: dataUrl,
+        img,
         // Aufnahmedatum aus EXIF; Fallback auf das Datei-Änderungsdatum
         createdAt: exif.date || (f.lastModified ? new Date(f.lastModified).toISOString() : '')
       }));

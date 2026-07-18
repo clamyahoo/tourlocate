@@ -86,7 +86,9 @@ async function save(map) {
     title: $('titleInput').value,
     line_mode: getSetting('lineMode'),
     profile: getSetting('profile'),
-    data: { pois },
+    // Routen-Geometrie mitspeichern, damit die öffentliche Ansicht bei
+    // "Route" die echte Strecke zeigt (ohne dort neu routen zu müssen).
+    data: { pois, route: map.state.routeCoords || [] },
     csrf
   };
   const res = await fetch('api/presentations.php?action=save', {
@@ -108,6 +110,67 @@ function setStatus(text, isError = false) {
 }
 function markDirty() { dirty = true; setStatus('Nicht gespeichert'); }
 function markSaved() { dirty = false; setStatus('Gespeichert ✓'); }
+
+// ---- Teilen (öffentlicher Link + Passwort) --------------------------
+function setupShare() {
+  const modal = $('shareModal');
+  const shareApi = async (action, extra) => {
+    const res = await fetch('api/share.php?action=' + action, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ id: pid, csrf, ...extra })
+    });
+    return res.json().catch(() => ({}));
+  };
+  const shareMsg = t => { $('shareMsg').textContent = t || ''; };
+
+  const render = (s) => {
+    $('shareToggle').checked = !!s.shared;
+    $('shareBody').style.display = s.shared ? 'block' : 'none';
+    if (s.shared && s.token) {
+      $('shareUrl').value = new URL('view.php?t=' + s.token, location.href).href;
+    }
+    $('sharePwToggle').checked = !!s.hasPassword;
+    $('sharePwRow').style.display = s.hasPassword ? 'flex' : 'none';
+    $('sharePw').value = '';
+  };
+
+  $('shareBtn').onclick = async () => {
+    shareMsg('');
+    const res = await fetch('api/share.php?action=status&id=' + pid, { headers: { 'X-CSRF-Token': csrf } });
+    render(await res.json().catch(() => ({})));
+    modal.style.display = 'flex';
+  };
+  $('shareClose').onclick = () => { modal.style.display = 'none'; };
+  modal.onclick = e => { if (e.target === modal) modal.style.display = 'none'; };
+
+  $('shareToggle').onchange = async (e) => {
+    shareMsg('');
+    const s = await shareApi(e.target.checked ? 'enable' : 'disable');
+    if (s.ok) render(s); else shareMsg(s.error || 'Fehler.');
+  };
+
+  $('sharePwToggle').onchange = (e) => {
+    $('sharePwRow').style.display = e.target.checked ? 'flex' : 'none';
+    if (!e.target.checked) {
+      // Passwortschutz entfernen = leeres Passwort setzen
+      shareApi('setpassword', { password: '' }).then(s => { if (s.ok) render(s); });
+    }
+  };
+
+  $('sharePwSave').onclick = async () => {
+    shareMsg('');
+    const pw = $('sharePw').value;
+    if (!pw) { shareMsg('Bitte ein Passwort eingeben.'); return; }
+    const s = await shareApi('setpassword', { password: pw });
+    if (s.ok) { render(s); shareMsg(''); } else shareMsg(s.error || 'Fehler.');
+  };
+
+  $('shareCopy').onclick = async () => {
+    try { await navigator.clipboard.writeText($('shareUrl').value); shareMsg('Link kopiert ✓'); }
+    catch { $('shareUrl').select(); document.execCommand('copy'); shareMsg('Link kopiert ✓'); }
+  };
+}
 
 // ---- Start -----------------------------------------------------------
 window.addEventListener('DOMContentLoaded', () => {
@@ -139,6 +202,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   $('saveBtn').onclick = () => save(map);
   $('titleInput').oninput = markDirty;
+  setupShare();
 
   // Vor dem Verlassen warnen, wenn ungespeichert
   window.addEventListener('beforeunload', e => {

@@ -58,7 +58,36 @@ $csrf = csrf_token();
     <img class="brand-img" src="../img/logo.png" alt="" onerror="this.style.display='none'">
     <input id="titleInput" type="text" placeholder="Titel der Präsentation">
     <span id="saveStatus"></span>
+    <button id="shareBtn">Teilen</button>
     <button id="saveBtn">Speichern</button>
+  </div>
+
+  <!-- Teilen-Dialog -->
+  <div id="shareModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.5);align-items:center;justify-content:center;padding:16px">
+    <div style="background:#fff;border-radius:12px;padding:22px;max-width:440px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.3)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <strong style="font-size:16px">Präsentation teilen</strong>
+        <button id="shareClose" style="border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:#666">×</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:12px">
+        <input type="checkbox" id="shareToggle"> Öffentlichen Link aktivieren
+      </label>
+      <div id="shareBody" style="display:none">
+        <div style="display:flex;gap:6px;margin-bottom:12px">
+          <input id="shareUrl" type="text" readonly style="flex:1;padding:8px;border:1px solid #cbd2d9;border-radius:7px;font:inherit;background:#f7f9fb">
+          <button id="shareCopy" style="padding:8px 12px;border:1px solid #cbd2d9;border-radius:7px;background:#fff;cursor:pointer">Kopieren</button>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:8px">
+          <input type="checkbox" id="sharePwToggle"> Mit Passwort schützen
+        </label>
+        <div id="sharePwRow" style="display:none;gap:6px">
+          <input id="sharePw" type="text" placeholder="Passwort" style="flex:1;padding:8px;border:1px solid #cbd2d9;border-radius:7px;font:inherit">
+          <button id="sharePwSave" style="padding:8px 12px;border:1px solid #2b6cb0;border-radius:7px;background:#2b6cb0;color:#fff;font-weight:600;cursor:pointer">Setzen</button>
+        </div>
+        <p style="font-size:12px;color:#667;margin:10px 0 0">Jeder mit diesem Link (und ggf. Passwort) kann die Präsentation ansehen — nur lesend.</p>
+      </div>
+      <div id="shareMsg" style="font-size:13px;color:#c0392b;min-height:1em;margin-top:8px"></div>
+    </div>
   </div>
 
   <div id="tl-main">

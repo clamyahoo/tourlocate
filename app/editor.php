@@ -48,8 +48,8 @@ $csrf = csrf_token();
     #saveBtn{ background:#2b6cb0; color:#fff; border-color:#2b6cb0; font-weight:600; }
     #tl-main{ flex:1 1 auto; display:flex; flex-direction:row; min-height:0; }
     #map{ flex:1 1 auto; min-width:0; height:100%; }
-    /* In der User-Version (vorerst) ausgeblendet: kommt in späteren Scheiben */
-    #secExport, #secWebdav { display:none; }
+    /* WebDAV-Bereich kommt erst in einer späteren Scheibe */
+    #secWebdav { display:none; }
   </style>
 </head>
 <body>

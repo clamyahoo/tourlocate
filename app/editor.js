@@ -116,8 +116,20 @@ window.addEventListener('DOMContentLoaded', () => {
   setupUI(map);
   setupIO(map);
 
-  // Server-Modus aktivieren (die js-Module fragen diesen Hook ab)
+  // Server-Modus aktivieren (die js-Module fragen diese Hooks ab)
   map.imageStore = imageStore;
+  // Für den Export: Server-Bild-URL → Base64 auflösen
+  map.resolveImage = async (url) => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = () => reject(fr.error || new Error('filereader-error'));
+      fr.readAsDataURL(blob);
+    });
+  };
 
   // Änderungen an POIs als "nicht gespeichert" markieren
   const prevHook = map.onPoisChanged;

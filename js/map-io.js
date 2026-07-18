@@ -428,7 +428,14 @@ ${leafletJsBlock}
         pane.style.zIndex=150; // Kachel-Pane liegt bei 200
         L.imageOverlay(data.SNAPSHOT.img, data.SNAPSHOT.bounds, {pane:'tl-snapshot'}).addTo(map);
       }
-      L.tileLayer(data.TILE_URL, {maxZoom:data.TILE_MAXZ, attribution:data.TILE_ATTR}).addTo(map);
+      // OSM & Co. verlangen inzwischen einen echten Referer-Header fuer
+      // Kachel-Anfragen; bei file:// (Doppelklick geoeffnet) schickt der
+      // Browser keinen mit, die Server liefern dann "Access blocked"-
+      // Platzhalterbilder statt echter Kacheln, die den Schnappschuss
+      // darunter verdecken wuerden. Deshalb Live-Kacheln nur ueber http(s).
+      if (location.protocol === 'http:' || location.protocol === 'https:') {
+        L.tileLayer(data.TILE_URL, {maxZoom:data.TILE_MAXZ, attribution:data.TILE_ATTR}).addTo(map);
+      }
 
       var markers=L.featureGroup().addTo(map);
       (data.GEO||[]).forEach(function(p,i){

@@ -109,3 +109,16 @@ function now_iso(): string
 {
     return gmdate('Y-m-d\TH:i:s\Z');
 }
+
+// UTF-8-sichere Kürzung auf max. $max Zeichen — nutzt mbstring, wenn
+// vorhanden, sonst PCRE-Fallback (kein mbstring als Pflicht-Abhängigkeit).
+function tl_str_limit(string $s, int $max): string
+{
+    if (function_exists('mb_substr')) {
+        return mb_substr($s, 0, $max, 'UTF-8');
+    }
+    if (preg_match_all('/./us', $s, $m) && count($m[0]) > $max) {
+        return implode('', array_slice($m[0], 0, $max));
+    }
+    return $s;
+}

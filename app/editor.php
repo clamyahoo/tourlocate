@@ -177,6 +177,26 @@ $csrf = csrf_token();
         </label>
       </details>
 
+      <details class="sb-sec" id="secWebdavConn">
+        <summary>Cloud-Ordner (automatisch)</summary>
+        <p class="sb-hint" style="margin:6px 0">Neue Fotos aus einem WebDAV-/Nextcloud-Ordner werden automatisch als Stationen ergänzt (alle paar Minuten). Bitte ein <strong>App-Passwort</strong> verwenden, kein Konto-Passwort — es wird verschlüsselt auf dem Server gespeichert.</p>
+        <label class="sb-field-col"><span>Ordner-URL:</span>
+          <input id="wcUrl" type="url" placeholder="https://cloud.example.org/remote.php/dav/files/USER/Ordner/">
+        </label>
+        <label class="sb-field-col"><span>Benutzer:</span>
+          <input id="wcUser" type="text" autocomplete="off">
+        </label>
+        <label class="sb-field-col"><span>App-Passwort:</span>
+          <input id="wcPass" type="password" autocomplete="off" placeholder="leer = unverändert">
+        </label>
+        <div class="sb-row">
+          <button id="wcSaveBtn">Speichern</button>
+          <button id="wcTestBtn">Testen</button>
+          <button id="wcDeleteBtn" class="tl-danger">Entfernen</button>
+        </div>
+        <p class="sb-hint" id="wcStatus" style="margin:6px 0"></p>
+      </details>
+
       <details id="secWebdav" class="sb-sec">
         <summary data-i18n="secWebdav">WebDAV-Bilder (z. B. Nextcloud)</summary>
         <label class="sb-field-col"><span data-i18n="webdavUrlLabel">Ordner-URL:</span>

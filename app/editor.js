@@ -172,6 +172,68 @@ function setupShare() {
   };
 }
 
+// ---- WebDAV-Dauerverbindung (Cloud-Ordner, Cron-Import) -------------
+function setupWebdavConn() {
+  const api = async (action, extra) => {
+    const opts = { headers: { 'X-CSRF-Token': csrf } };
+    if (extra !== undefined) {
+      opts.method = 'POST';
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify({ presentation_id: pid, csrf, ...extra });
+    }
+    const url = 'api/webdav.php?action=' + action +
+      (extra === undefined ? '&presentation_id=' + pid : '');
+    const res = await fetch(url, opts);
+    return res.json().catch(() => ({}));
+  };
+  const status = (text, isError = false) => {
+    const el = $('wcStatus');
+    el.textContent = text || '';
+    el.style.color = isError ? '#c0392b' : '#555';
+  };
+
+  const render = (s) => {
+    if (s.configured) {
+      $('wcUrl').value = s.url || '';
+      $('wcUser').value = s.username || '';
+      let txt = 'Verbindung aktiv.';
+      if (s.lastPollAt) txt += ' Letzter Abruf: ' + new Date(s.lastPollAt).toLocaleString('de-DE') + '.';
+      else txt += ' Wartet auf den ersten Cron-Lauf.';
+      if (s.lastError) { status(txt + ' Letzter Fehler: ' + s.lastError, true); return; }
+      status(txt);
+    } else {
+      status('Keine Verbindung hinterlegt.');
+    }
+  };
+
+  api('status').then(render);
+
+  $('wcSaveBtn').onclick = async () => {
+    status('Speichern…');
+    const s = await api('save', {
+      url: $('wcUrl').value.trim(),
+      username: $('wcUser').value.trim(),
+      password: $('wcPass').value
+    });
+    if (s.ok) { $('wcPass').value = ''; render(s); }
+    else status(s.error || 'Fehler.', true);
+  };
+
+  $('wcTestBtn').onclick = async () => {
+    status('Teste Verbindung…');
+    const s = await api('test', {});
+    if (s.ok) status('Verbindung ok — ' + s.imageCount + ' JPEG(s) im Ordner gefunden.');
+    else status(s.error || 'Test fehlgeschlagen.', true);
+  };
+
+  $('wcDeleteBtn').onclick = async () => {
+    if (!confirm('Cloud-Verbindung entfernen? (Bereits importierte Bilder bleiben erhalten.)')) return;
+    const s = await api('delete', {});
+    if (s.ok) { $('wcUrl').value = ''; $('wcUser').value = ''; $('wcPass').value = ''; render(s); }
+    else status(s.error || 'Fehler.', true);
+  };
+}
+
 // ---- Start -----------------------------------------------------------
 window.addEventListener('DOMContentLoaded', () => {
   const map = initMap();
@@ -203,6 +265,7 @@ window.addEventListener('DOMContentLoaded', () => {
   $('saveBtn').onclick = () => save(map);
   $('titleInput').oninput = markDirty;
   setupShare();
+  setupWebdavConn();
 
   // Vor dem Verlassen warnen, wenn ungespeichert
   window.addEventListener('beforeunload', e => {

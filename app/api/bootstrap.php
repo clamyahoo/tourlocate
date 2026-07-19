@@ -88,7 +88,47 @@ function require_login(): int
     if ($uid === null) {
         json_error('Nicht angemeldet.', 401);
     }
+    // Gesperrte Konten sofort aussperren (auch mit noch aktiver Session)
+    $st = db()->prepare('SELECT blocked FROM users WHERE id = ?');
+    $st->execute([$uid]);
+    $blocked = $st->fetchColumn();
+    if ($blocked === false || (int) $blocked === 1) {
+        logout_user();
+        json_error('Dieses Konto ist gesperrt.', 403);
+    }
     return $uid;
+}
+
+// Admin-Guard: wie require_login, zusätzlich is_admin-Pflicht.
+function require_admin(): int
+{
+    $uid = require_login();
+    $st = db()->prepare('SELECT is_admin FROM users WHERE id = ?');
+    $st->execute([$uid]);
+    if ((int) $st->fetchColumn() !== 1) {
+        json_error('Keine Berechtigung.', 403);
+    }
+    return $uid;
+}
+
+function is_admin_user(?int $uid): bool
+{
+    if ($uid === null) {
+        return false;
+    }
+    $st = db()->prepare('SELECT is_admin FROM users WHERE id = ?');
+    $st->execute([$uid]);
+    return (int) $st->fetchColumn() === 1;
+}
+
+// Audit-Log-Eintrag (Admin-Zugriffe auf fremde Inhalte / Verwaltung)
+function tl_audit(int $adminId, string $action, ?int $targetUser = null, ?int $targetPres = null, string $detail = ''): void
+{
+    $st = db()->prepare(
+        'INSERT INTO audit_log (admin_id, action, target_user_id, target_pres_id, detail, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)'
+    );
+    $st->execute([$adminId, $action, $targetUser, $targetPres, $detail, now_iso()]);
 }
 
 function login_user(int $uid): void

@@ -35,7 +35,8 @@ if (!$row) {
 }
 
 $uid = current_user_id();
-$isOwner = ($uid !== null && (int) $row['user_id'] === $uid);
+$isOwner = ($uid !== null && (int) $row['user_id'] === $uid)
+        || is_admin_user($uid); // Admin-Einblick (auditiert beim Öffnen der Präsentation)
 
 $shareOk = false;
 if (!$isOwner && $row['share_token'] !== null) {

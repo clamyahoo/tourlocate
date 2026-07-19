@@ -9,9 +9,11 @@ if ($uid === null) {
     header('Location: index.php');
     exit;
 }
-$st = db()->prepare('SELECT email FROM users WHERE id = ?');
+$st = db()->prepare('SELECT email, is_admin FROM users WHERE id = ?');
 $st->execute([$uid]);
-$email = (string) $st->fetchColumn();
+$me = $st->fetch();
+$email = (string) ($me['email'] ?? '');
+$isAdmin = (int) ($me['is_admin'] ?? 0) === 1;
 $csrf = csrf_token();
 ?>
 <!DOCTYPE html>
@@ -59,6 +61,7 @@ $csrf = csrf_token();
   </div>
   <div>
     <span class="who"><?= htmlspecialchars($email, ENT_QUOTES) ?></span>
+    <?php if ($isAdmin): ?><a href="admin.php" style="margin-right:10px;color:#2b6cb0">Administration</a><?php endif; ?>
     <button id="logoutBtn">Abmelden</button>
   </div>
 </div>

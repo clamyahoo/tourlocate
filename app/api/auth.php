@@ -89,7 +89,7 @@ function login(array $input): void
     tl_rate_guard($mailKey);
     tl_rate_guard($ipKey);
 
-    $st = db()->prepare('SELECT id, email, password_hash FROM users WHERE email = ?');
+    $st = db()->prepare('SELECT id, email, password_hash, blocked FROM users WHERE email = ?');
     $st->execute([$email]);
     $user = $st->fetch();
 
@@ -98,6 +98,9 @@ function login(array $input): void
         tl_rate_fail($mailKey, 5);
         tl_rate_fail($ipKey, 20);
         json_error('E-Mail-Adresse oder Passwort ist falsch.', 401);
+    }
+    if ((int) $user['blocked'] === 1) {
+        json_error('Dieses Konto ist gesperrt.', 403);
     }
     tl_rate_clear($mailKey);
 

@@ -92,6 +92,29 @@ function tl_migrate(PDO $pdo): void
         );
     SQL);
 
+    // Nachträgliche Spalten (SQLite: ADD COLUMN wirft, wenn schon da)
+    foreach (['is_admin INTEGER NOT NULL DEFAULT 0', 'blocked INTEGER NOT NULL DEFAULT 0'] as $col) {
+        try {
+            $pdo->exec("ALTER TABLE users ADD COLUMN $col");
+        } catch (PDOException $e) {
+            // Spalte existiert bereits — ok
+        }
+    }
+
+    // Audit-Log: protokolliert Admin-Zugriffe auf fremde Inhalte (wer,
+    // wann, was) — Beleg für anlassbezogene statt wahlloser Einsicht.
+    $pdo->exec(<<<'SQL'
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            action          TEXT NOT NULL,
+            target_user_id  INTEGER,
+            target_pres_id  INTEGER,
+            detail          TEXT,
+            created_at      TEXT NOT NULL
+        );
+    SQL);
+
     $pdo->exec(<<<'SQL'
         CREATE TABLE IF NOT EXISTS rate_limits (
             key           TEXT PRIMARY KEY,

@@ -1,12 +1,25 @@
 // POI-Logik: Anlegen, Nummerieren, Popups, Löschen, Sortieren, Erstellungsgesten
 
-import { setRouteWaypoints } from './map-core.js';
+import { setRouteWaypoints, snapToTrackIndex } from './map-core.js';
+import { getSetting, setSetting } from './map-settings.js';
 import { t, formatDateTime } from './map-i18n.js';
 import { openPoiDialog, openLightbox } from './map-ui.js';
+
+// In der Track-Ansicht eine Position auf den nächsten aufgezeichneten
+// Punkt einrasten (Stationen liegen dann exakt auf der Strecke).
+function snapIfTrack(map, lat, lng) {
+  const track = map.state.track;
+  if (track && track.length && getSetting('lineMode') === 'track') {
+    const i = snapToTrackIndex(track, lat, lng);
+    return { lat: track[i][0], lng: track[i][1] };
+  }
+  return { lat, lng };
+}
 
 // Gemeinsame Fabrik für interaktive Erstellung UND Import.
 // Ruft bewusst NICHT renumberAndRoute auf (Importe arbeiten im Stapel).
 export function createPoi(map, { lat, lng, name = '', link = '', linkText = '', img = '', createdAt = '' }) {
+  ({ lat, lng } = snapIfTrack(map, lat, lng));
   const marker = L.marker([lat, lng], { draggable: true }).addTo(map.markersLayer);
   const p = {
     lat, lng, name, link, linkText, img,
@@ -16,8 +29,12 @@ export function createPoi(map, { lat, lng, name = '', link = '', linkText = '', 
 
   marker.on('dragend', e => {
     const ll = e.target.getLatLng();
-    p.lat = ll.lat;
-    p.lng = ll.lng;
+    const snapped = snapIfTrack(map, ll.lat, ll.lng);
+    p.lat = snapped.lat;
+    p.lng = snapped.lng;
+    if (snapped.lat !== ll.lat || snapped.lng !== ll.lng) {
+      e.target.setLatLng([p.lat, p.lng]); // Marker sichtbar auf die Strecke ziehen
+    }
     renumberAndRoute(map);
   });
 
@@ -98,6 +115,13 @@ export function bindPoiPopup(map, p, i) {
 
 // Nummern-Icons setzen, Popups rebinden, Route & Button-Zustände aktualisieren
 export function renumberAndRoute(map) {
+  // In der Track-Ansicht folgt die Nummerierung dem Streckenverlauf
+  const track = map.state.track;
+  if (track && track.length && getSetting('lineMode') === 'track' && map.state.pois.length > 1) {
+    map.state.pois.sort((a, b) =>
+      snapToTrackIndex(track, a.lat, a.lng) - snapToTrackIndex(track, b.lat, b.lng));
+  }
+
   map.state.pois.forEach((p, i) => {
     const icon = L.divIcon({ className: 'poi-num', html: String(i + 1), iconSize: [26, 26], iconAnchor: [13, 13] });
     p.marker.setIcon(icon);
@@ -126,6 +150,12 @@ export function removeLastPoi(map) {
 export function clearPois(map) {
   map.state.pois.forEach(p => map.markersLayer.removeLayer(p.marker));
   map.state.pois.length = 0;
+  // "Alles löschen" verwirft auch eine importierte Aufzeichnung
+  if (map.state.track) {
+    map.state.track = null;
+    if (getSetting('lineMode') === 'track') setSetting('lineMode', 'route');
+    map.onTrackChanged?.();
+  }
   renumberAndRoute(map);
 }
 

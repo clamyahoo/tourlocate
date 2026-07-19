@@ -19,7 +19,7 @@ $uid = require_login();
 $action = $_GET['action'] ?? '';
 
 // Erlaubte Werte für die Verbindungsdarstellung (nichts/Linie/Route)
-const LINE_MODES = ['none', 'straight', 'route'];
+const LINE_MODES = ['none', 'straight', 'route', 'track'];
 const PROFILES   = ['car', 'bike', 'foot'];
 
 if ($action === 'list') {

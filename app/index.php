@@ -52,6 +52,11 @@ $csrf = csrf_token();
     <label for="password">Passwort</label>
     <input id="password" name="password" type="password" required
            autocomplete="current-password" minlength="8">
+    <div id="totpRow" style="display:none">
+      <label for="totpCode">Code aus der Authenticator-App (oder Recovery-Code)</label>
+      <input id="totpCode" type="text" inputmode="numeric" autocomplete="one-time-code"
+             placeholder="123456">
+    </div>
     <button type="submit" id="submitBtn">Anmelden</button>
   </form>
   <div class="switch" id="switchLine">
@@ -89,23 +94,35 @@ function setMode(m) {
 }
 switchLink.onclick = () => setMode('register');
 
+let awaiting2fa = false;
+
 document.getElementById('authForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   submitBtn.disabled = true;
   msg.className = 'msg';
   msg.textContent = 'Moment…';
   try {
-    const res = await fetch('api/auth.php?action=' + mode, {
+    // Zweiter Schritt: nur den 2FA-Code schicken
+    const action = awaiting2fa ? 'totp' : mode;
+    const body = awaiting2fa
+      ? { code: document.getElementById('totpCode').value.trim(), csrf: CSRF }
+      : { email: document.getElementById('email').value, password: pwInput.value, csrf: CSRF };
+    const res = await fetch('api/auth.php?action=' + action, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
-      body: JSON.stringify({
-        email: document.getElementById('email').value,
-        password: pwInput.value,
-        csrf: CSRF
-      })
+      body: JSON.stringify(body)
     });
     const data = await res.json();
-    if (data.ok) {
+    if (data.ok && data.need2fa) {
+      // Passwort ok, Konto hat 2FA → Code-Eingabe zeigen
+      awaiting2fa = true;
+      document.getElementById('totpRow').style.display = 'block';
+      document.getElementById('email').disabled = true;
+      pwInput.disabled = true;
+      submitBtn.textContent = 'Code bestätigen';
+      msg.textContent = '';
+      document.getElementById('totpCode').focus();
+    } else if (data.ok) {
       msg.className = 'msg ok';
       msg.textContent = 'Erfolgreich — weiter…';
       location.href = 'dashboard.php';

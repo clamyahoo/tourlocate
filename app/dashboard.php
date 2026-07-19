@@ -73,8 +73,47 @@ $csrf = csrf_token();
   </div>
   <div class="list" id="list"></div>
   <div class="msg" id="msg"></div>
+
+  <h1 style="margin-top:34px;font-size:18px">Sicherheit</h1>
+  <div class="card" style="display:block" id="twofaCard">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div class="meta">
+        <div class="title">Zwei-Faktor-Authentifizierung (2FA)</div>
+        <div class="sub" id="twofaState">Lade…</div>
+      </div>
+      <div class="actions">
+        <button id="twofaEnableBtn" style="display:none">Einrichten</button>
+        <button id="twofaDisableBtn" class="danger" style="display:none">Abschalten</button>
+      </div>
+    </div>
+    <div id="twofaSetup" style="display:none;margin-top:14px;border-top:1px solid #eef2f6;padding-top:14px">
+      <p style="font-size:13px;margin:0 0 10px">Scanne den QR-Code mit einer Authenticator-App
+      (z. B. Aegis, FreeOTP, Google Authenticator) oder gib das Secret von Hand ein.
+      Bestätige dann mit einem aktuellen Code.</p>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+        <canvas id="twofaQr" width="180" height="180" style="border:1px solid #e2e8f0;border-radius:8px"></canvas>
+        <div style="min-width:220px">
+          <div style="font-size:12px;color:#667">Secret (manuelle Eingabe):</div>
+          <code id="twofaSecret" style="font-size:13px;user-select:all;word-break:break-all"></code>
+          <div style="margin-top:12px;display:flex;gap:6px">
+            <input id="twofaCode" type="text" inputmode="numeric" placeholder="123456"
+                   style="width:110px;padding:8px;border:1px solid #cbd2d9;border-radius:7px;font:inherit">
+            <button class="primary" id="twofaConfirmBtn">Aktivieren</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="twofaRecovery" style="display:none;margin-top:14px;border-top:1px solid #eef2f6;padding-top:14px">
+      <strong style="color:#1e7d34">2FA ist aktiv.</strong>
+      <p style="font-size:13px;margin:6px 0">Bewahre diese Recovery-Codes sicher auf (Passwort-Manager,
+      Ausdruck). Jeder Code funktioniert genau einmal, falls die Authenticator-App verloren geht.
+      <strong>Sie werden nur jetzt angezeigt.</strong></p>
+      <pre id="twofaCodes" style="background:#f7f9fb;border:1px solid #e2e8f0;border-radius:8px;padding:12px;font-size:14px;user-select:all"></pre>
+    </div>
+  </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js" defer></script>
 <script>
 const CSRF = <?= json_encode($csrf) ?>;
 
@@ -158,6 +197,72 @@ document.getElementById('logoutBtn').onclick = async () => {
 };
 
 load();
+
+// ==================== 2FA (TOTP) ====================
+async function totpApi(action, body) {
+  const opts = { headers: { 'X-CSRF-Token': CSRF } };
+  if (body) {
+    opts.method = 'POST';
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify({ ...body, csrf: CSRF });
+  }
+  const res = await fetch('api/totp.php?action=' + action, opts);
+  return res.json().catch(() => ({}));
+}
+
+const twofaState = document.getElementById('twofaState');
+const enableBtn = document.getElementById('twofaEnableBtn');
+const disableBtn = document.getElementById('twofaDisableBtn');
+
+async function loadTwofa() {
+  const s = await totpApi('status');
+  if (!s.ok) { twofaState.textContent = 'Status nicht abrufbar.'; return; }
+  if (s.enabled) {
+    twofaState.textContent = 'Aktiv — beim Anmelden wird zusätzlich ein Code abgefragt. '
+      + s.recoveryLeft + ' Recovery-Code(s) übrig.';
+    enableBtn.style.display = 'none';
+    disableBtn.style.display = '';
+  } else {
+    twofaState.textContent = 'Nicht aktiv. Empfohlen — schützt dein Konto zusätzlich zum Passwort.';
+    enableBtn.style.display = '';
+    disableBtn.style.display = 'none';
+  }
+}
+
+enableBtn.onclick = async () => {
+  const s = await totpApi('setup', {});
+  if (!s.ok) { msg.textContent = s.error || 'Fehler.'; return; }
+  document.getElementById('twofaSetup').style.display = 'block';
+  document.getElementById('twofaSecret').textContent = s.secret.replace(/(.{4})/g, '$1 ').trim();
+  // QR zeichnen; wenn die CDN-Bibliothek fehlt, bleibt die manuelle Eingabe
+  if (window.QRCode) {
+    QRCode.toCanvas(document.getElementById('twofaQr'), s.uri, { width: 180, margin: 1 });
+  } else {
+    document.getElementById('twofaQr').style.display = 'none';
+  }
+  document.getElementById('twofaCode').focus();
+};
+
+document.getElementById('twofaConfirmBtn').onclick = async () => {
+  const s = await totpApi('confirm', { code: document.getElementById('twofaCode').value.trim() });
+  if (!s.ok) { msg.textContent = s.error || 'Fehler.'; return; }
+  msg.textContent = '';
+  document.getElementById('twofaSetup').style.display = 'none';
+  document.getElementById('twofaRecovery').style.display = 'block';
+  document.getElementById('twofaCodes').textContent = s.recoveryCodes.join('\n');
+  loadTwofa();
+};
+
+disableBtn.onclick = async () => {
+  const pw = prompt('Zum Abschalten der 2FA bitte dein Passwort eingeben:');
+  if (pw === null) return;
+  const s = await totpApi('disable', { password: pw });
+  if (!s.ok) { msg.textContent = s.error || 'Fehler.'; return; }
+  document.getElementById('twofaRecovery').style.display = 'none';
+  loadTwofa();
+};
+
+loadTwofa();
 </script>
 </body>
 </html>

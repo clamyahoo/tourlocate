@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/ratelimit.php';
+require_once __DIR__ . '/totp.php'; // nur Bibliotheksfunktionen (Guard in totp.php)
 
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 
@@ -31,6 +32,9 @@ switch ($action) {
         break;
     case 'login':
         login($input);
+        break;
+    case 'totp':
+        totp_login($input);
         break;
     case 'logout':
         require_csrf($input);
@@ -89,7 +93,7 @@ function login(array $input): void
     tl_rate_guard($mailKey);
     tl_rate_guard($ipKey);
 
-    $st = db()->prepare('SELECT id, email, password_hash, blocked FROM users WHERE email = ?');
+    $st = db()->prepare('SELECT id, email, password_hash, blocked, totp_secret FROM users WHERE email = ?');
     $st->execute([$email]);
     $user = $st->fetch();
 
@@ -104,6 +108,14 @@ function login(array $input): void
     }
     tl_rate_clear($mailKey);
 
+    // 2FA aktiv? Dann noch KEINE Session — erst den Code abfragen.
+    if ($user['totp_secret'] !== null) {
+        tl_session_start();
+        session_regenerate_id(true);
+        $_SESSION['2fa_pending_uid'] = (int) $user['id'];
+        json_out(['ok' => true, 'need2fa' => true]);
+    }
+
     // Hash bei Bedarf auf aktuelles Verfahren anheben
     if (password_needs_rehash($user['password_hash'], PASSWORD_DEFAULT)) {
         $new = password_hash($pass, PASSWORD_DEFAULT);
@@ -113,4 +125,50 @@ function login(array $input): void
 
     login_user((int) $user['id']);
     json_out(['ok' => true, 'user' => ['id' => (int) $user['id'], 'email' => $user['email']], 'csrf' => csrf_token()]);
+}
+
+// Zweiter Login-Schritt bei aktiver 2FA: TOTP-Code ODER Recovery-Code.
+function totp_login(array $input): void
+{
+    tl_session_start();
+    $uid = (int) ($_SESSION['2fa_pending_uid'] ?? 0);
+    if ($uid === 0) {
+        json_error('Kein Anmeldevorgang aktiv — bitte neu anmelden.', 400);
+    }
+
+    // Brute-Force-Bremse auch für den zweiten Faktor
+    $rlKey = 'totp:uid:' . $uid;
+    tl_rate_guard($rlKey);
+
+    $st = db()->prepare('SELECT id, email, totp_secret, totp_recovery_json, blocked FROM users WHERE id = ?');
+    $st->execute([$uid]);
+    $user = $st->fetch();
+    if (!$user || (int) $user['blocked'] === 1 || $user['totp_secret'] === null) {
+        unset($_SESSION['2fa_pending_uid']);
+        json_error('Anmeldung nicht möglich.', 403);
+    }
+
+    $code = trim((string) ($input['code'] ?? ''));
+    $okTotp = tl_totp_verify((string) $user['totp_secret'], $code);
+    $okRecovery = false;
+    if (!$okTotp) {
+        // Recovery-Code? (Format XXXX-XXXX; wird bei Erfolg verbraucht)
+        $hashes = json_decode($user['totp_recovery_json'] ?: '[]', true) ?: [];
+        $rest = tl_use_recovery_code($hashes, $code);
+        if ($rest !== null) {
+            db()->prepare('UPDATE users SET totp_recovery_json = ? WHERE id = ?')
+                ->execute([json_encode($rest), $uid]);
+            $okRecovery = true;
+        }
+    }
+    if (!$okTotp && !$okRecovery) {
+        tl_rate_fail($rlKey, 5);
+        json_error('Der Code ist nicht korrekt.', 401);
+    }
+
+    tl_rate_clear($rlKey);
+    unset($_SESSION['2fa_pending_uid']);
+    login_user($uid);
+    json_out(['ok' => true, 'user' => ['id' => $uid, 'email' => $user['email']],
+              'csrf' => csrf_token(), 'usedRecovery' => $okRecovery]);
 }

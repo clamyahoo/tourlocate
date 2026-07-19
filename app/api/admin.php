@@ -74,6 +74,20 @@ switch ($action) {
         ]]);
         break;
 
+    case 'settings':
+        json_out(['ok' => true, 'registrationMode' => tl_registration_mode()]);
+        break;
+
+    case 'invites':
+        $rows = db()->query(
+            'SELECT i.id, i.token, i.note, i.created_at, i.used_at,
+                    u.email AS used_by_email
+               FROM invites i LEFT JOIN users u ON u.id = i.used_by
+              ORDER BY (i.used_by IS NULL) DESC, i.id DESC LIMIT 200'
+        )->fetchAll();
+        json_out(['ok' => true, 'invites' => $rows]);
+        break;
+
     case 'reports':
         $rows = db()->query(
             'SELECT r.id, r.presentation_id, r.reason, r.status, r.created_at,
@@ -147,6 +161,56 @@ switch ($action) {
         db()->prepare('DELETE FROM presentations WHERE id = ?')->execute([$pid]);
         tl_audit($aid, 'delete_presentation', (int) $p['user_id'], $pid, (string) $p['title']);
         json_out(['ok' => true]);
+        break;
+
+    case 'setmode':
+        $mode = (string) ($input['mode'] ?? '');
+        if (!in_array($mode, ['open', 'invite', 'closed'], true)) {
+            json_error('Ungültiger Modus.');
+        }
+        tl_setting_set('registration_mode', $mode);
+        tl_audit($aid, 'set_registration_mode', null, null, $mode);
+        json_out(['ok' => true, 'registrationMode' => $mode]);
+        break;
+
+    case 'createinvite':
+        $note = tl_str_limit(trim((string) ($input['note'] ?? '')), 200);
+        $token = bin2hex(random_bytes(16));
+        db()->prepare('INSERT INTO invites (token, note, created_by, created_at) VALUES (?, ?, ?, ?)')
+            ->execute([$token, $note, $aid, now_iso()]);
+        tl_audit($aid, 'create_invite', null, null, $note);
+        json_out(['ok' => true, 'token' => $token]);
+        break;
+
+    case 'deleteinvite':
+        $iid = (int) ($input['id'] ?? 0);
+        // Nur unbenutzte Einladungen löschbar (benutzte bleiben als Beleg)
+        $st = db()->prepare('DELETE FROM invites WHERE id = ? AND used_by IS NULL');
+        $st->execute([$iid]);
+        json_out(['ok' => true, 'deleted' => $st->rowCount()]);
+        break;
+
+    case 'createuser':
+        $email = trim(strtolower((string) ($input['email'] ?? '')));
+        $pass  = (string) ($input['password'] ?? '');
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            json_error('Bitte eine gültige E-Mail-Adresse angeben.');
+        }
+        if (strlen($pass) < 8) {
+            json_error('Das Passwort muss mindestens 8 Zeichen lang sein.');
+        }
+        try {
+            db()->prepare('INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)')
+                ->execute([$email, password_hash($pass, PASSWORD_DEFAULT), now_iso()]);
+        } catch (PDOException $e) {
+            if ($e->getCode() === '23000' || stripos($e->getMessage(), 'UNIQUE') !== false) {
+                json_error('Diese E-Mail-Adresse ist bereits registriert.', 409);
+            }
+            json_error('Datenbankfehler beim Anlegen.', 500);
+        }
+        $newUid = (int) db()->lastInsertId();
+        tl_audit($aid, 'create_user', $newUid, null, $email);
+        json_out(['ok' => true, 'id' => $newUid, 'email' => $email]);
         break;
 
     case 'closereport':

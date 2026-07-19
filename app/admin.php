@@ -62,7 +62,40 @@ $csrf = csrf_token();
 </div>
 
 <div class="wrap">
-  <h1>Nutzerverwaltung</h1>
+  <h1>Registrierung &amp; Zugang</h1>
+  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin-bottom:10px">
+    <label style="font-size:14px">Wer kann sich anmelden?
+      <select id="regMode" style="margin-left:8px;padding:6px 8px;border:1px solid #cbd2d9;border-radius:6px;font:inherit">
+        <option value="open">Offen — jeder kann sich registrieren</option>
+        <option value="invite">Nur mit Einladung</option>
+        <option value="closed">Geschlossen — nur Admin legt Konten an</option>
+      </select>
+    </label>
+    <span id="regModeSaved" style="font-size:12px;color:#1e7d34;margin-left:10px"></span>
+
+    <div id="inviteBlock" style="margin-top:14px;border-top:1px solid #eef2f6;padding-top:12px">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <input id="inviteNote" type="text" placeholder="Notiz (optional, z. B. Name)" style="flex:1;min-width:160px;padding:7px 8px;border:1px solid #cbd2d9;border-radius:6px;font:inherit">
+        <button id="createInviteBtn">Einladungslink erzeugen</button>
+      </div>
+      <table id="invitesTable" style="margin-top:10px">
+        <thead><tr><th>Erstellt</th><th>Notiz</th><th>Status</th><th>Link</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div style="margin-top:14px;border-top:1px solid #eef2f6;padding-top:12px">
+      <strong style="font-size:14px">Konto manuell anlegen</strong>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px">
+        <input id="newUserEmail" type="email" placeholder="E-Mail" style="flex:1;min-width:160px;padding:7px 8px;border:1px solid #cbd2d9;border-radius:6px;font:inherit">
+        <input id="newUserPass" type="text" placeholder="Passwort (min. 8)" style="flex:1;min-width:140px;padding:7px 8px;border:1px solid #cbd2d9;border-radius:6px;font:inherit">
+        <button id="createUserBtn">Anlegen</button>
+      </div>
+      <div id="createUserMsg" style="font-size:13px;min-height:1em;margin-top:6px"></div>
+    </div>
+  </div>
+
+  <h1 style="margin-top:26px">Nutzerverwaltung</h1>
   <div class="note">Jeder Einblick in fremde Präsentationen und jede Verwaltungsaktion wird
   im Audit-Log protokolliert. Einsicht nur anlassbezogen vornehmen (z. B. bei einer
   Meldung wegen rechtswidriger Inhalte).</div>
@@ -249,6 +282,76 @@ document.querySelector('#reportsTable tbody').addEventListener('click', async e 
   }
 });
 
+// ==================== Registrierung & Zugang ====================
+const regMode = document.getElementById('regMode');
+const inviteBlock = document.getElementById('inviteBlock');
+
+async function loadRegSettings() {
+  const s = await api('settings');
+  if (!s.ok) return;
+  regMode.value = s.registrationMode;
+  inviteBlock.style.display = s.registrationMode === 'invite' ? 'block' : 'none';
+}
+
+regMode.onchange = async () => {
+  const s = await api('setmode', { mode: regMode.value });
+  if (s.ok) {
+    inviteBlock.style.display = s.registrationMode === 'invite' ? 'block' : 'none';
+    const saved = document.getElementById('regModeSaved');
+    saved.textContent = 'Gespeichert ✓';
+    setTimeout(() => saved.textContent = '', 1800);
+    if (s.registrationMode === 'invite') loadInvites();
+  } else msg.textContent = s.error || 'Fehler.';
+};
+
+async function loadInvites() {
+  const d = await api('invites');
+  if (!d.ok) return;
+  document.querySelector('#invitesTable tbody').innerHTML = d.invites.map(i => {
+    const url = new URL('index.php?invite=' + i.token, location.href).href;
+    const used = i.used_at
+      ? `verwendet (${esc(i.used_by_email || '')})`
+      : '<span class="badge blocked">offen</span>';
+    return `<tr data-id="${i.id}">
+      <td>${fmt(i.created_at)}</td>
+      <td>${esc(i.note || '')}</td>
+      <td>${used}</td>
+      <td>${i.used_at ? '' : `<input readonly value="${esc(url)}" style="width:230px;font-size:11px;padding:3px 5px;border:1px solid #cbd2d9;border-radius:5px" onclick="this.select()">`}</td>
+      <td>${i.used_at ? '' : '<button data-del="1">Löschen</button>'}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5">Noch keine Einladungen.</td></tr>';
+}
+
+document.getElementById('createInviteBtn').onclick = async () => {
+  const s = await api('createinvite', { note: document.getElementById('inviteNote').value });
+  if (s.ok) { document.getElementById('inviteNote').value = ''; loadInvites(); }
+  else msg.textContent = s.error || 'Fehler.';
+};
+
+document.querySelector('#invitesTable tbody').addEventListener('click', async e => {
+  const btn = e.target.closest('button[data-del]'); if (!btn) return;
+  const id = Number(e.target.closest('tr').dataset.id);
+  const s = await api('deleteinvite', { id });
+  if (s.ok) loadInvites(); else msg.textContent = s.error || 'Fehler.';
+});
+
+document.getElementById('createUserBtn').onclick = async () => {
+  const m = document.getElementById('createUserMsg');
+  m.style.color = '#c0392b'; m.textContent = '';
+  const s = await api('createuser', {
+    email: document.getElementById('newUserEmail').value,
+    password: document.getElementById('newUserPass').value
+  });
+  if (s.ok) {
+    m.style.color = '#1e7d34';
+    m.textContent = 'Konto angelegt: ' + s.email;
+    document.getElementById('newUserEmail').value = '';
+    document.getElementById('newUserPass').value = '';
+    loadUsers();
+  } else m.textContent = s.error || 'Fehler.';
+};
+
+loadRegSettings(); loadInvites();
 loadUsers(); loadAudit(); loadReports();
 </script>
 </body>

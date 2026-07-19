@@ -63,6 +63,10 @@ $csrf = csrf_token();
     Noch kein Konto? <a id="switchLink">Registrieren</a>
   </div>
   <div class="msg" id="msg"></div>
+  <div style="margin-top:16px;text-align:center;font-size:12px">
+    <a href="impressum.php" style="color:#889">Impressum</a> ·
+    <a href="datenschutz.php" style="color:#889">Datenschutz</a>
+  </div>
 </div>
 
 <script>

@@ -74,6 +74,16 @@ switch ($action) {
         ]]);
         break;
 
+    case 'reports':
+        $rows = db()->query(
+            'SELECT r.id, r.presentation_id, r.reason, r.status, r.created_at,
+                    p.title, p.user_id
+               FROM reports r JOIN presentations p ON p.id = r.presentation_id
+              ORDER BY (r.status = \'open\') DESC, r.id DESC LIMIT 200'
+        )->fetchAll();
+        json_out(['ok' => true, 'reports' => $rows]);
+        break;
+
     case 'audit':
         $rows = db()->query(
             'SELECT a.id, a.action, a.target_user_id, a.target_pres_id, a.detail, a.created_at,
@@ -136,6 +146,19 @@ switch ($action) {
         tl_admin_rrmdir(tl_data_dir() . '/uploads/' . (int) $p['user_id'] . '/' . $pid);
         db()->prepare('DELETE FROM presentations WHERE id = ?')->execute([$pid]);
         tl_audit($aid, 'delete_presentation', (int) $p['user_id'], $pid, (string) $p['title']);
+        json_out(['ok' => true]);
+        break;
+
+    case 'closereport':
+        $rid = (int) ($input['id'] ?? 0);
+        $st = db()->prepare('SELECT presentation_id FROM reports WHERE id = ?');
+        $st->execute([$rid]);
+        $pid = $st->fetchColumn();
+        if ($pid === false) {
+            json_error('Meldung nicht gefunden.', 404);
+        }
+        db()->prepare('UPDATE reports SET status = ? WHERE id = ?')->execute(['closed', $rid]);
+        tl_audit($aid, 'close_report', null, (int) $pid, 'Meldung #' . $rid . ' geschlossen');
         json_out(['ok' => true]);
         break;
 

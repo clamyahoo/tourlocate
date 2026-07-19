@@ -82,6 +82,12 @@ $csrf = csrf_token();
     <div id="viewMap"></div>
   </div>
 
+  <h2>Meldungen (Inhalt melden)</h2>
+  <table id="reportsTable">
+    <thead><tr><th>Zeit</th><th>Präsentation</th><th>Begründung</th><th>Status</th><th>Aktionen</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
   <h2>Audit-Log (letzte 200 Einträge)</h2>
   <table id="auditTable">
     <thead><tr><th>Zeit</th><th>Admin</th><th>Aktion</th><th>Nutzer</th><th>Präs.</th><th>Detail</th></tr></thead>
@@ -203,7 +209,47 @@ async function loadAudit() {
     || '<tr><td colspan="6">Noch keine Einträge.</td></tr>';
 }
 
-loadUsers(); loadAudit();
+async function loadReports() {
+  const d = await api('reports');
+  if (!d.ok) return;
+  document.querySelector('#reportsTable tbody').innerHTML = d.reports.map(r => `
+    <tr>
+      <td>${fmt(r.created_at)}</td>
+      <td>#${r.presentation_id} ${esc(r.title)} (Nutzer ${r.user_id})</td>
+      <td style="max-width:280px">${esc(r.reason)}</td>
+      <td>${r.status === 'open' ? '<span class="badge blocked">offen</span>' : 'erledigt'}</td>
+      <td>
+        <button data-view="${r.presentation_id}">Ansehen (auditiert)</button>
+        ${r.status === 'open' ? `<button data-close="${r.id}">Erledigt</button>` : ''}
+      </td>
+    </tr>`).join('') || '<tr><td colspan="5">Keine Meldungen.</td></tr>';
+}
+
+document.querySelector('#reportsTable tbody').addEventListener('click', async e => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  msg.textContent = '';
+  if (btn.dataset.view) {
+    // gleicher auditierter Einblick wie im Präsentations-Panel
+    const d = await api('presentation', null, '&id=' + btn.dataset.view);
+    if (!d.ok) { msg.textContent = d.error || 'Fehler.'; return; }
+    const panel = document.getElementById('presPanel');
+    panel.style.display = 'block';
+    document.getElementById('presTitle').textContent =
+      'Gemeldete Präsentation #' + d.presentation.id + ' — ' + d.presentation.title;
+    document.querySelector('#presTable tbody').innerHTML =
+      `<tr data-id="${d.presentation.id}"><td>${d.presentation.id}</td><td>${esc(d.presentation.title)}</td>
+       <td>-</td><td>${d.presentation.shared?'ja':'nein'}</td><td>-</td>
+       <td><button data-act="view">Karte zeigen</button>
+           <button class="danger" data-act="delpres">Löschen</button></td></tr>`;
+    panel.scrollIntoView({behavior:'smooth'});
+    loadAudit();
+  } else if (btn.dataset.close) {
+    const d = await api('closereport', { id: Number(btn.dataset.close) });
+    if (d.ok) { loadReports(); loadAudit(); } else msg.textContent = d.error || 'Fehler.';
+  }
+});
+
+loadUsers(); loadAudit(); loadReports();
 </script>
 </body>
 </html>

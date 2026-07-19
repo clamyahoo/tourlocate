@@ -116,6 +116,17 @@ function tl_migrate(PDO $pdo): void
         );
     SQL);
 
+    // Inhalts-Meldungen aus der öffentlichen Ansicht (Notice-and-Takedown)
+    $pdo->exec(<<<'SQL'
+        CREATE TABLE IF NOT EXISTS reports (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            presentation_id INTEGER NOT NULL REFERENCES presentations(id) ON DELETE CASCADE,
+            reason          TEXT NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'open',
+            created_at      TEXT NOT NULL
+        );
+    SQL);
+
     $pdo->exec(<<<'SQL'
         CREATE TABLE IF NOT EXISTS rate_limits (
             key           TEXT PRIMARY KEY,

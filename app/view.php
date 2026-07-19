@@ -129,9 +129,26 @@ $json = str_replace('<', '\\u003c', $json); // nie </script> in der Payload
 <body>
 <div id="bar">
   <img src="../img/logo.png" alt="" onerror="this.style.display='none'">
-  <strong><?= htmlspecialchars($P['title'], ENT_QUOTES) ?></strong>
+  <strong style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= htmlspecialchars($P['title'], ENT_QUOTES) ?></strong>
+  <a href="#" id="reportLink" style="font-size:12px;color:#888;white-space:nowrap">Inhalt melden</a>
+  <a href="impressum.php" style="font-size:12px;color:#888;white-space:nowrap">Impressum</a>
 </div>
 <div id="map"></div>
+
+<!-- Melde-Dialog -->
+<div id="reportModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.5);align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:12px;padding:20px;max-width:420px;width:100%">
+    <strong>Inhalt melden</strong>
+    <p style="font-size:13px;color:#555;margin:8px 0">Du hältst Inhalte dieser Seite für rechtswidrig
+    oder unangemessen? Beschreibe kurz das Problem — der Betreiber prüft die Meldung.</p>
+    <textarea id="reportReason" rows="4" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd2d9;border-radius:7px;font:inherit" placeholder="Was ist das Problem? (mind. 10 Zeichen)"></textarea>
+    <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end">
+      <button id="reportCancel" style="padding:8px 12px;border:1px solid #cbd2d9;border-radius:7px;background:#fff;cursor:pointer">Abbrechen</button>
+      <button id="reportSend" style="padding:8px 12px;border:0;border-radius:7px;background:#c0392b;color:#fff;font-weight:600;cursor:pointer">Melden</button>
+    </div>
+    <div id="reportMsg" style="font-size:13px;min-height:1em;margin-top:8px"></div>
+  </div>
+</div>
 
 <script id="tl-data" type="application/json"><?= $json ?></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -179,6 +196,28 @@ $json = str_replace('<', '\\u003c', $json); // nie </script> in der Payload
 
   var b=markers.getBounds();
   if (b.isValid()) map.fitBounds(b.pad(0.15));
+
+  // Inhalts-Meldung (Notice-and-Takedown)
+  var TOKEN = <?= json_encode($token) ?>;
+  var modal = document.getElementById('reportModal');
+  document.getElementById('reportLink').onclick = function(e){ e.preventDefault(); modal.style.display='flex'; };
+  document.getElementById('reportCancel').onclick = function(){ modal.style.display='none'; };
+  document.getElementById('reportSend').onclick = async function(){
+    var m = document.getElementById('reportMsg');
+    m.style.color = '#c0392b'; m.textContent = '';
+    try {
+      var res = await fetch('api/report.php', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ token: TOKEN, reason: document.getElementById('reportReason').value })
+      });
+      var d = await res.json();
+      if (d.ok) {
+        m.style.color = '#1e7d34';
+        m.textContent = 'Danke — die Meldung wurde übermittelt.';
+        setTimeout(function(){ modal.style.display='none'; m.textContent=''; document.getElementById('reportReason').value=''; }, 1800);
+      } else m.textContent = d.error || 'Fehler.';
+    } catch(e) { m.textContent = 'Verbindungsfehler.'; }
+  };
 })();
 </script>
 </body>

@@ -322,7 +322,7 @@ export function setupUI(map) {
 
   const updateButtons = () => {
     const off = map.state.pois.length === 0;
-    ['undoBtn', 'clearBtn', 'exportGeoBtn', 'exportGpxBtn', 'exportHtmlBtn', 'exportZipBtn', 'sortSel']
+    ['undoBtn', 'clearBtn', 'exportGeoBtn', 'exportGpxBtn', 'exportHtmlBtn', 'exportZipBtn', 'exportImsBtn', 'sortSel']
       .forEach(id => { const el = $(id); if (el) el.disabled = off; });
   };
   map.onPoisChanged = updateButtons;

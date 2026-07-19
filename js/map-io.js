@@ -29,8 +29,10 @@ export function setupIO(map) {
 
     $('exportGeoBtn').onclick = async () => triggerBlobDownload(exportFilename('geojson'), await buildGeoJSONBlob(map));
     $('exportGpxBtn').onclick = () => triggerBlobDownload(exportFilename('gpx'), buildGpxBlob(map));
-    $('exportHtmlBtn').onclick = () => exportHtml(map, { zip: false });
-    $('exportZipBtn').onclick = () => exportHtml(map, { zip: true });
+    $('exportHtmlBtn').onclick = () => exportHtml(map, 'single');
+    $('exportZipBtn').onclick = () => exportHtml(map, 'zip');
+    const imsBtn = $('exportImsBtn');
+    if (imsBtn) imsBtn.onclick = () => exportHtml(map, 'ims');
   };
   bind();
   window.addEventListener('pageshow', bind);
@@ -186,20 +188,53 @@ function importFeatures(map, gj, { namesOnly }) {
   }
 }
 
-// ==================== Export: HTML (Ein-Datei oder ZIP mit Bilderordner) ====================
-async function exportHtml(map, { zip }) {
-  const btn = zip ? $('exportZipBtn') : $('exportHtmlBtn');
+// IMS-Content-Package-Manifest (imsmanifest.xml). Offener 1EdTech-
+// Standard; Moodle u. a. importieren solche ZIPs direkt. Die eigentliche
+// Tour steckt als eigenständige index.html im selben Paket.
+function imsManifest(title) {
+  const t2 = escapeXml(title || 'Tourlocate');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="TOURLOCATE-MANIFEST" version="1.1"
+  xmlns="http://www.imsglobal.org/xsd/imscp_v1p1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.imsglobal.org/xsd/imscp_v1p1 http://www.imsglobal.org/xsd/imscp_v1p1.xsd">
+  <organizations default="TOC">
+    <organization identifier="TOC">
+      <title>${t2}</title>
+      <item identifier="ITEM1" identifierref="RES1">
+        <title>${t2}</title>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="RES1" type="webcontent" href="index.html">
+      <file href="index.html"/>
+    </resource>
+  </resources>
+</manifest>`;
+}
+
+// ==================== Export: HTML (Ein-Datei / ZIP / IMS-Paket) ====================
+// mode: 'single' (eine HTML-Datei), 'zip' (HTML + bilder/), 'ims'
+// (IMS-Content-Package fuer Moodle: eigenständige HTML + imsmanifest.xml).
+async function exportHtml(map, mode) {
+  const zip = mode === 'zip';
+  const btn = mode === 'zip' ? $('exportZipBtn')
+            : mode === 'ims' ? $('exportImsBtn')
+            : $('exportHtmlBtn');
   const routeinfo = $('routeinfo');
   const prevText = routeinfo.textContent;
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   routeinfo.textContent = t('creatingExport');
   try {
     const snapshot = await captureMapSnapshot(map);
     const assets = await fetchLeafletAssets();
     const imgMap = await resolveExportImages(map);
+    // Nur der ZIP-Modus legt Bilder als eigene Dateien ab; single und ims
+    // betten sie inline als Base64 ein (eigenständige HTML).
     const { html, imgFiles } = buildExportHtml(map, snapshot, assets, { imageFolder: zip, imgMap });
 
-    if (zip) {
+    if (mode === 'zip') {
       const files = [{ name: 'tourlocate.html', data: new TextEncoder().encode(html) }];
       // Bilddateien bekommen EXIF-Daten: Stationsname, Datum, GPS-Position
       // (das Canvas-Re-Encoding beim Anhängen hatte sie entfernt)
@@ -210,11 +245,18 @@ async function exportHtml(map, { zip }) {
         })
       }));
       triggerBlobDownload(exportFilename('zip'), buildZipBlob(files));
+    } else if (mode === 'ims') {
+      const enc = new TextEncoder();
+      const files = [
+        { name: 'imsmanifest.xml', data: enc.encode(imsManifest(document.title)) },
+        { name: 'index.html', data: enc.encode(html) }
+      ];
+      triggerBlobDownload(exportFilename('ims.zip'), buildZipBlob(files));
     } else {
       triggerBlobDownload(exportFilename('html'), new Blob([html], { type: 'text/html;charset=utf-8' }));
     }
   } finally {
-    btn.disabled = map.state.pois.length === 0;
+    if (btn) btn.disabled = map.state.pois.length === 0;
     routeinfo.textContent = prevText;
   }
 }

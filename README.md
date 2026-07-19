@@ -46,6 +46,46 @@ Nur relevant, wenn Bilder automatisch aus einem WebDAV-/Nextcloud-Ordner importi
 - `webdav-proxy.php` muss zusammen mit den übrigen Dateien im selben Verzeichnis wie `index.html` hochgeladen sein.
 - Der in `webdav-proxy.php` und `js/map-config.js` hinterlegte `PROXY_KEY` sollte vor dem produktiven Einsatz in beiden Dateien auf einen eigenen, zufälligen Wert geändert werden (siehe Kommentare in beiden Dateien).
 
+## User-Version (`/app`, in Entwicklung)
+
+Neben der statischen App entsteht unter `/app/` eine Mehrbenutzer-Version mit Konten: Präsentationen serverseitig speichern, Bilder hochladen (automatisch auf ~200 KB verkleinert), öffentliche Teilen-Links mit Passwortschutz und eine dauerhafte WebDAV-/Nextcloud-Verbindung, die neue Fotos automatisch als Stationen ergänzt. Details in [app/DESIGN.md](app/DESIGN.md).
+
+**Zusätzliche Voraussetzungen** (nur für die User-Version; die statische App bleibt davon unberührt):
+
+- PHP-Erweiterungen **`php-sqlite3`**, **`php-gd`** und **`php-exif`** (unter Ubuntu/Debian: `sudo apt install php-sqlite3 php-gd php-exif`; `php-exif` ist oft schon in `php-cli`/`php-fpm` enthalten).
+- Einmalig `app/api/config.sample.php` nach `app/api/config.php` kopieren und die Werte anpassen (Schlüssel erzeugen mit `php -r "echo bin2hex(random_bytes(32));"`). `config.php` und das Datenverzeichnis `app/data/` gehören nicht ins Repo.
+- Für den automatischen Cloud-Import einen **Cron-Job** einrichten, der den Poller alle paar Minuten aufruft — per Crontab (`crontab -e`):
+
+  ```
+  */5 * * * * php /pfad/zu/tourlocate/app/cron/poll-webdav.php
+  ```
+
+  Alternativ als systemd-Timer (`systemctl edit --force --full tourlocate-webdav.timer`):
+
+  ```ini
+  # /etc/systemd/system/tourlocate-webdav.service
+  [Unit]
+  Description=Tourlocate WebDAV-Import
+
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/bin/php /pfad/zu/tourlocate/app/cron/poll-webdav.php
+
+  # /etc/systemd/system/tourlocate-webdav.timer
+  [Unit]
+  Description=Tourlocate WebDAV-Import alle 5 Minuten
+
+  [Timer]
+  OnBootSec=2min
+  OnUnitActiveSec=5min
+
+  [Install]
+  WantedBy=timers.target
+  ```
+
+  Danach aktivieren mit `sudo systemctl enable --now tourlocate-webdav.timer`.
+- In der Cloud (z. B. Nextcloud: Einstellungen → Sicherheit) ein **App-Passwort** erzeugen und dieses im Editor hinterlegen — nie das Konto-Passwort. Es wird auf dem Server verschlüsselt gespeichert, muss aber für den Cron entschlüsselbar bleiben; ein App-Passwort lässt sich im Zweifel einzeln widerrufen.
+
 ## Architektur
 
 Der komplette Programmcode liegt in `js/` als ES-Module, eingebunden über `<script type="module" src="js/main.js">` in `index.html`:

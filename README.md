@@ -85,6 +85,27 @@ Neben der statischen App entsteht unter `/app/` eine Mehrbenutzer-Version mit Ko
 
   Danach aktivieren mit `sudo systemctl enable --now tourlocate-webdav.timer`.
 - In der Cloud (z. B. Nextcloud: Einstellungen → Sicherheit) ein **App-Passwort** erzeugen und dieses im Editor hinterlegen — nie das Konto-Passwort. Es wird auf dem Server verschlüsselt gespeichert, muss aber für den Cron entschlüsselbar bleiben; ein App-Passwort lässt sich im Zweifel einzeln widerrufen.
+- Nach dem ersten Start ein Konto registrieren und es auf dem Server per Kommandozeile zum Admin machen (Nutzerverwaltung/Moderation, siehe `app/admin.php`):
+
+  ```bash
+  php app/make-admin.php deine@mail.de
+  ```
+
+### Als Docker-Container (Alternative zur manuellen Installation)
+
+Statt PHP-Erweiterungen manuell zu installieren, kann die User-Version als fertiges Docker-Image gebaut werden — `php-sqlite3`, `php-gd`, `php-exif` und `sodium` sind darin bereits enthalten, ebenso ein eingebauter Cron für den WebDAV-Poller. Die statische App (`index.html`, `js/`) läuft im selben Container automatisch mit.
+
+```bash
+docker compose up -d --build
+```
+
+Danach ist die Seite unter `http://localhost:8080/` (statische App) bzw. `http://localhost:8080/app/` (User-Version) erreichbar. Details:
+
+- **Persistenz**: Das Volume `tourlocate_data` (→ `app/data/` im Container) enthält die SQLite-Datenbank, alle hochgeladenen Bilder **und** den beim ersten Start automatisch erzeugten Verschlüsselungsschlüssel für die WebDAV-Passwörter. Dieses Volume niemals löschen, sonst sind Konten, Präsentationen und gespeicherte WebDAV-Zugangsdaten unwiderruflich weg.
+- **Erster Admin**: nach dem ersten Registrieren im Container ausführen: `docker compose exec tourlocate php app/make-admin.php deine@mail.de`.
+- **Hinter einem Reverse-Proxy mit HTTPS** (empfohlen) läuft `TOURLOCATE_COOKIE_SECURE=true` (Standard in `docker-compose.yml`) problemlos. Läuft der Container (nur zum Testen) ohne HTTPS davor, auf `"false"` setzen — sonst verwirft der Browser den Session-Cookie und der Login funktioniert nicht.
+- **In Portainer**: unter „Stacks" → „Add stack" → „Web editor" den Inhalt von `docker-compose.yml` einfügen (Build-Kontext muss dabei auf das Repo zeigen, z. B. über „Repository" statt „Web editor" direkt aus Git deployen) und den Stack starten.
+- **`webdav-proxy.php`** (die ältere, proxy-basierte WebDAV-Anbindung der statischen App) funktioniert im Container ebenfalls, ganz ohne Zusatzkonfiguration — `php-curl` ist im Image enthalten.
 
 ## Architektur
 

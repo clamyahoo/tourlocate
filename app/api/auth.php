@@ -6,6 +6,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/ratelimit.php';
 
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 
@@ -42,6 +43,10 @@ switch ($action) {
 
 function register(array $input): void
 {
+    // Konto-Anlage pro IP drosseln (gegen Massenregistrierung)
+    $ipKey = 'register:ip:' . tl_client_ip();
+    tl_rate_guard($ipKey);
+
     $email = trim(strtolower((string) ($input['email'] ?? '')));
     $pass  = (string) ($input['password'] ?? '');
 
@@ -61,10 +66,12 @@ function register(array $input): void
         // andere DB-Fehler (fehlender Treiber o. Ä.) nicht verschleiern.
         if (($e->getCode() === '23000')
             || stripos($e->getMessage(), 'UNIQUE') !== false) {
+            tl_rate_fail($ipKey, 10); // auch Duplikat-Proben drosseln
             json_error('Diese E-Mail-Adresse ist bereits registriert.', 409);
         }
         json_error('Datenbankfehler bei der Registrierung.', 500);
     }
+    tl_rate_fail($ipKey, 10); // jede Konto-Anlage zählt gegen das IP-Limit
 
     login_user((int) db()->lastInsertId());
     json_out(['ok' => true, 'user' => ['email' => $email], 'csrf' => csrf_token()]);
@@ -75,14 +82,24 @@ function login(array $input): void
     $email = trim(strtolower((string) ($input['email'] ?? '')));
     $pass  = (string) ($input['password'] ?? '');
 
+    // Brute-Force-Bremse: pro Konto streng (5), pro IP großzügiger (20,
+    // damit geteilte IPs nicht komplett aussperren)
+    $mailKey = 'login:mail:' . $email;
+    $ipKey   = 'login:ip:' . tl_client_ip();
+    tl_rate_guard($mailKey);
+    tl_rate_guard($ipKey);
+
     $st = db()->prepare('SELECT id, email, password_hash FROM users WHERE email = ?');
     $st->execute([$email]);
     $user = $st->fetch();
 
     // Konstante Antwort bei falschem Nutzer/Passwort (kein User-Enumeration).
     if (!$user || !password_verify($pass, $user['password_hash'])) {
+        tl_rate_fail($mailKey, 5);
+        tl_rate_fail($ipKey, 20);
         json_error('E-Mail-Adresse oder Passwort ist falsch.', 401);
     }
+    tl_rate_clear($mailKey);
 
     // Hash bei Bedarf auf aktuelles Verfahren anheben
     if (password_needs_rehash($user['password_hash'], PASSWORD_DEFAULT)) {

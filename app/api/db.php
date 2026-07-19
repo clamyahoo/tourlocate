@@ -93,6 +93,15 @@ function tl_migrate(PDO $pdo): void
     SQL);
 
     $pdo->exec(<<<'SQL'
+        CREATE TABLE IF NOT EXISTS rate_limits (
+            key           TEXT PRIMARY KEY,
+            fails         INTEGER NOT NULL DEFAULT 0,
+            window_start  INTEGER NOT NULL,
+            blocked_until INTEGER
+        );
+    SQL);
+
+    $pdo->exec(<<<'SQL'
         CREATE TABLE IF NOT EXISTS webdav_connections (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

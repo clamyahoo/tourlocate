@@ -13,6 +13,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/ratelimit.php';
 
 $action = $_GET['action'] ?? '';
 
@@ -23,15 +24,22 @@ if ($action === 'unlock') {
     $token = (string) ($input['token'] ?? '');
     $pass  = (string) ($input['password'] ?? '');
 
+    // Öffentlich erreichbar → Brute-Force-Bremse pro Token+IP
+    $rlKey = 'unlock:tok:' . substr(hash('sha256', $token), 0, 16) . ':ip:' . tl_client_ip();
+    tl_rate_guard($rlKey);
+
     $st = db()->prepare('SELECT id, share_password_hash FROM presentations WHERE share_token = ?');
     $st->execute([$token]);
     $p = $st->fetch();
     if (!$p) {
+        tl_rate_fail($rlKey, 10); // auch Token-Raten drosseln
         json_error('Link nicht gefunden.', 404);
     }
     if ($p['share_password_hash'] !== null && !password_verify($pass, $p['share_password_hash'])) {
+        tl_rate_fail($rlKey, 10);
         json_error('Falsches Passwort.', 401);
     }
+    tl_rate_clear($rlKey);
     tl_session_start();
     $_SESSION['share_ok'][(int) $p['id']] = true;
     json_out(['ok' => true]);

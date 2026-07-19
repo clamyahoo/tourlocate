@@ -8,7 +8,7 @@ import {
   readFileAsText, triggerBlobDownload, escapeXml,
   dataURLToBytes, buildZipBlob
 } from './map-utils.js';
-import { createPoi, renumberAndRoute } from './map-pois.js';
+import { createPoi, renumberAndRoute, pushUndo } from './map-pois.js';
 import { writeExif } from './map-exif.js';
 
 const $ = id => document.getElementById(id);
@@ -128,6 +128,7 @@ function importGeoFile(map, input) {
       alert(t('invalidGeojson'));
       return;
     }
+    pushUndo(map); // Import rückgängig machbar
     importFeatures(map, geo, { namesOnly: false });
   }).catch(err => {
     alert(t('geojsonError', { msg: err?.message || err }));
@@ -174,6 +175,8 @@ function importGpxFile(map, input) {
       alert(t('invalidGpx'));
       return;
     }
+
+    pushUndo(map); // Import rückgängig machbar
 
     // Aufzeichnung übernehmen und in den Track-Modus schalten (Stationen
     // rasten dann auf die Strecke ein, die Verbindung folgt der Aufnahme).

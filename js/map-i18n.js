@@ -6,6 +6,7 @@ const STRINGS = {
   de: {
     // Toolbar
     hint: 'Doppelklick / Rechtsklick (mobil: Tippen / lange drücken) = neue Station',
+    undoAction: 'Rückgängig',
     undo: 'Letzte löschen',
     clear: 'Alles löschen',
     importGeo: 'GeoJSON importieren…',
@@ -20,8 +21,8 @@ const STRINGS = {
     exportZip: 'HTML+Bilder (ZIP)',
     exportIms: 'IMS-Paket (Moodle)',
     sortPlaceholder: 'Sortieren…',
-    sortNameAsc: 'Name ↑',
-    sortNameDesc: 'Name ↓',
+    sortNameAsc: 'Bezeichnung ↑',
+    sortNameDesc: 'Bezeichnung ↓',
     sortDateAsc: 'Datum ↑',
     sortDateDesc: 'Datum ↓',
     // Einstellungs-Zeile
@@ -119,6 +120,7 @@ const STRINGS = {
 
   en: {
     hint: 'Double-click / right-click (mobile: tap / long-press) = new station',
+    undoAction: 'Undo',
     undo: 'Remove last',
     clear: 'Clear all',
     importGeo: 'Import GeoJSON…',

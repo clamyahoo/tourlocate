@@ -1,12 +1,12 @@
 // POI-Logik: Anlegen, Nummerieren, Popups, Löschen, Sortieren, Erstellungsgesten
 
-import { setRouteWaypoints, snapToTrackIndex } from './map-core.js';
+import { setRouteWaypoints, snapToTrackIndex, trackAnchor } from './map-core.js';
 import { getSetting, setSetting } from './map-settings.js';
 import { t, formatDateTime } from './map-i18n.js';
 import { openPoiDialog, openLightbox } from './map-ui.js';
 
-// In der Track-Ansicht eine Position auf den nächsten aufgezeichneten
-// Punkt einrasten (Stationen liegen dann exakt auf der Strecke).
+// Position auf den nächsten aufgezeichneten Punkt einrasten (nur im
+// Track-Modus). Wird beim interaktiven Anlegen genutzt.
 function snapIfTrack(map, lat, lng) {
   const track = map.state.track;
   if (track && track.length && getSetting('lineMode') === 'track') {
@@ -16,10 +16,11 @@ function snapIfTrack(map, lat, lng) {
   return { lat, lng };
 }
 
-// Gemeinsame Fabrik für interaktive Erstellung UND Import.
-// Ruft bewusst NICHT renumberAndRoute auf (Importe arbeiten im Stapel).
+// Gemeinsame Fabrik für interaktive Erstellung UND Import/Undo.
+// Bewusst OHNE Einrasten (Import/Undo stellen exakte Positionen wieder
+// her); interaktives Anlegen snappt in startCreation, Draggen unten mit
+// Schwellwert. Ruft auch nicht renumberAndRoute auf (Importe im Stapel).
 export function createPoi(map, { lat, lng, name = '', link = '', linkText = '', img = '', createdAt = '' }) {
-  ({ lat, lng } = snapIfTrack(map, lat, lng));
   const marker = L.marker([lat, lng], { draggable: true }).addTo(map.markersLayer);
   const p = {
     lat, lng, name, link, linkText, img,
@@ -27,13 +28,22 @@ export function createPoi(map, { lat, lng, name = '', link = '', linkText = '', 
     marker
   };
 
+  marker.on('dragstart', () => pushUndo(map)); // Verschieben ist rückgängig machbar
   marker.on('dragend', e => {
     const ll = e.target.getLatLng();
-    const snapped = snapIfTrack(map, ll.lat, ll.lng);
-    p.lat = snapped.lat;
-    p.lng = snapped.lng;
-    if (snapped.lat !== ll.lat || snapped.lng !== ll.lng) {
-      e.target.setLatLng([p.lat, p.lng]); // Marker sichtbar auf die Strecke ziehen
+    p.lat = ll.lat;
+    p.lng = ll.lng;
+    // Im Track-Modus rastet nur ein kleiner Schubser (≤ TRACK_ON_M) wieder
+    // ein; ein größerer Zug löst die Station von der Aufzeichnung, der
+    // Abschnitt zur Nachbarstation wird dann zur geraden Linie.
+    const track = map.state.track;
+    if (track && track.length && getSetting('lineMode') === 'track') {
+      const a = trackAnchor(track, p.lat, p.lng);
+      if (a.on) {
+        p.lat = track[a.i][0];
+        p.lng = track[a.i][1];
+        e.target.setLatLng([p.lat, p.lng]);
+      }
     }
     renumberAndRoute(map);
   });
@@ -113,6 +123,50 @@ export function bindPoiPopup(map, p, i) {
   if (popup) delete popup._tlDialog;
 }
 
+// ==================== Rückgängig (Undo) ====================
+// Schnappschuss des relevanten Zustands. track wird nie in place geändert
+// (nur ersetzt), daher genügt die Referenz — spart Speicher bei großen
+// Aufzeichnungen.
+function snapshotState(map) {
+  return {
+    lineMode: getSetting('lineMode'),
+    track: map.state.track,
+    pois: map.state.pois.map(p => ({
+      lat: p.lat, lng: p.lng, name: p.name, link: p.link,
+      linkText: p.linkText, img: p.img, createdAt: p.createdAt
+    }))
+  };
+}
+
+// Vor einer zustandsändernden Aktion aufrufen.
+export function pushUndo(map) {
+  const stack = map.state.undoStack;
+  stack.push(snapshotState(map));
+  if (stack.length > 40) stack.shift();
+  map.onHistoryChanged?.();
+}
+
+// Zuletzt gepushten Schnappschuss verwerfen (bei abgebrochener Aktion).
+export function popUndo(map) {
+  map.state.undoStack.pop();
+  map.onHistoryChanged?.();
+}
+
+// Letzten Schnappschuss wiederherstellen.
+export function undo(map) {
+  const snap = map.state.undoStack.pop();
+  if (!snap) return;
+  map.state.pois.forEach(p => map.markersLayer.removeLayer(p.marker));
+  map.state.pois.length = 0;
+  map.state.track = snap.track;
+  setSetting('lineMode', snap.lineMode);
+  // createPoi rastet NICHT ein → exakte Positionen bleiben erhalten
+  snap.pois.forEach(sp => createPoi(map, sp));
+  map.onTrackChanged?.();
+  renumberAndRoute(map);
+  map.onHistoryChanged?.();
+}
+
 // Nummern-Icons setzen, Popups rebinden, Route & Button-Zustände aktualisieren
 export function renumberAndRoute(map) {
   // In der Track-Ansicht folgt die Nummerierung dem Streckenverlauf
@@ -174,7 +228,10 @@ export function sortPois(map, key, dir) {
 // Erstellungsgesten (Desktop: Doppelklick/Rechtsklick, mobil: Tippen/Langdruck)
 export function setupPOIs(map) {
   const startCreation = latlng => {
-    const p = createPoi(map, { lat: latlng.lat, lng: latlng.lng });
+    pushUndo(map); // Anlegen rückgängig machbar (bei Abbruch verworfen)
+    // Beim Anlegen im Track-Modus auf die Aufzeichnung einrasten
+    const { lat, lng } = snapIfTrack(map, latlng.lat, latlng.lng);
+    const p = createPoi(map, { lat, lng });
     renumberAndRoute(map);
     openPoiDialog(map, p, 'create');
   };

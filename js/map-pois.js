@@ -1,12 +1,12 @@
 // POI-Logik: Anlegen, Nummerieren, Popups, Löschen, Sortieren, Erstellungsgesten
 
-import { setRouteWaypoints, snapToTrackIndex } from './map-core.js';
+import { setRouteWaypoints, snapToTrackIndex, trackAnchor } from './map-core.js';
 import { getSetting, setSetting } from './map-settings.js';
 import { t, formatDateTime } from './map-i18n.js';
 import { openPoiDialog, openLightbox } from './map-ui.js';
 
-// In der Track-Ansicht eine Position auf den nächsten aufgezeichneten
-// Punkt einrasten (Stationen liegen dann exakt auf der Strecke).
+// Position auf den nächsten aufgezeichneten Punkt einrasten (nur im
+// Track-Modus). Wird beim interaktiven Anlegen genutzt.
 function snapIfTrack(map, lat, lng) {
   const track = map.state.track;
   if (track && track.length && getSetting('lineMode') === 'track') {
@@ -16,10 +16,11 @@ function snapIfTrack(map, lat, lng) {
   return { lat, lng };
 }
 
-// Gemeinsame Fabrik für interaktive Erstellung UND Import.
-// Ruft bewusst NICHT renumberAndRoute auf (Importe arbeiten im Stapel).
+// Gemeinsame Fabrik für interaktive Erstellung UND Import/Undo.
+// Bewusst OHNE Einrasten (Import/Undo stellen exakte Positionen wieder
+// her); interaktives Anlegen snappt in startCreation, Draggen unten mit
+// Schwellwert. Ruft auch nicht renumberAndRoute auf (Importe im Stapel).
 export function createPoi(map, { lat, lng, name = '', link = '', linkText = '', img = '', createdAt = '' }) {
-  ({ lat, lng } = snapIfTrack(map, lat, lng));
   const marker = L.marker([lat, lng], { draggable: true }).addTo(map.markersLayer);
   const p = {
     lat, lng, name, link, linkText, img,
@@ -29,11 +30,19 @@ export function createPoi(map, { lat, lng, name = '', link = '', linkText = '', 
 
   marker.on('dragend', e => {
     const ll = e.target.getLatLng();
-    const snapped = snapIfTrack(map, ll.lat, ll.lng);
-    p.lat = snapped.lat;
-    p.lng = snapped.lng;
-    if (snapped.lat !== ll.lat || snapped.lng !== ll.lng) {
-      e.target.setLatLng([p.lat, p.lng]); // Marker sichtbar auf die Strecke ziehen
+    p.lat = ll.lat;
+    p.lng = ll.lng;
+    // Im Track-Modus rastet nur ein kleiner Schubser (≤ TRACK_ON_M) wieder
+    // ein; ein größerer Zug löst die Station von der Aufzeichnung, der
+    // Abschnitt zur Nachbarstation wird dann zur geraden Linie.
+    const track = map.state.track;
+    if (track && track.length && getSetting('lineMode') === 'track') {
+      const a = trackAnchor(track, p.lat, p.lng);
+      if (a.on) {
+        p.lat = track[a.i][0];
+        p.lng = track[a.i][1];
+        e.target.setLatLng([p.lat, p.lng]);
+      }
     }
     renumberAndRoute(map);
   });
@@ -174,7 +183,9 @@ export function sortPois(map, key, dir) {
 // Erstellungsgesten (Desktop: Doppelklick/Rechtsklick, mobil: Tippen/Langdruck)
 export function setupPOIs(map) {
   const startCreation = latlng => {
-    const p = createPoi(map, { lat: latlng.lat, lng: latlng.lng });
+    // Beim Anlegen im Track-Modus auf die Aufzeichnung einrasten
+    const { lat, lng } = snapIfTrack(map, latlng.lat, latlng.lng);
+    const p = createPoi(map, { lat, lng });
     renumberAndRoute(map);
     openPoiDialog(map, p, 'create');
   };

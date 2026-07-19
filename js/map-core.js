@@ -93,6 +93,11 @@ export function renderRouteInfo(map) {
     : '';
 }
 
+// Abstand (in Metern), ab dem eine Station als "neben der Strecke"
+// (nicht mehr auf dem Track) gilt. Kleinere Verschiebungen rasten wieder
+// ein, größere lösen die Station von der Aufzeichnung.
+export const TRACK_ON_M = 30;
+
 // Index des Track-Punktes, der (lat,lng) am nächsten liegt. Quadratischer
 // Abstand reicht für "am nächsten" (kein Wurzelziehen nötig).
 export function snapToTrackIndex(track, lat, lng) {
@@ -105,6 +110,14 @@ export function snapToTrackIndex(track, lat, lng) {
     if (d < bestD) { bestD = d; best = i; }
   }
   return best;
+}
+
+// Liegt die Station noch auf der Aufzeichnung? Rückgabe: { on, i } mit
+// dem nächsten Track-Index i.
+export function trackAnchor(track, lat, lng) {
+  const i = snapToTrackIndex(track, lat, lng);
+  const distM = haversineKm([[lat, lng], [track[i][0], track[i][1]]]) * 1000;
+  return { on: distM <= TRACK_ON_M, i };
 }
 
 // Verbindung gemäß Einstellung neu aufbauen:
@@ -124,9 +137,10 @@ export function setRouteWaypoints(map) {
     return;
   }
 
-  // Aufgezeichnete Strecke: Stationen auf den Track einrasten und den
-  // Abschnitt der echten Aufzeichnung zwischen erster und letzter Station
-  // zeichnen (nicht OSRM/Luftlinie).
+  // Aufgezeichnete Strecke: abschnittsweise zwischen den Stationen.
+  // Liegen beide Enden eines Abschnitts auf der Aufzeichnung, wird der
+  // echte Track-Teil gezeichnet; ist eine Station daneben gezogen, wird
+  // dieser Abschnitt zur geraden Linie (die Track-Punkte dort entfallen).
   if (mode === 'track') {
     map.routingControl.setWaypoints([]);
     const track = map.state.track;
@@ -136,9 +150,27 @@ export function setRouteWaypoints(map) {
       renderRouteInfo(map);
       return;
     }
-    const idx = pois.map(p => snapToTrackIndex(track, p.lat, p.lng));
-    const coords = track.slice(Math.min(...idx), Math.max(...idx) + 1);
-    L.polyline(coords, { weight: 4, color: '#d33' }).addTo(map.routeLayer);
+    const coords = [];
+    for (let k = 0; k < pois.length - 1; k++) {
+      const A = pois[k];
+      const B = pois[k + 1];
+      const a = trackAnchor(track, A.lat, A.lng);
+      const b = trackAnchor(track, B.lat, B.lng);
+      let seg;
+      if (a.on && b.on) {
+        const lo = Math.min(a.i, b.i);
+        const hi = Math.max(a.i, b.i);
+        seg = track.slice(lo, hi + 1);
+        if (a.i > b.i) seg.reverse(); // Richtung A → B beibehalten
+      } else {
+        seg = [[A.lat, A.lng], [B.lat, B.lng]];
+      }
+      // an die Gesamtlinie anhängen, ohne den Nahtpunkt zu doppeln
+      for (let j = (coords.length ? 1 : 0); j < seg.length; j++) coords.push(seg[j]);
+    }
+    if (coords.length > 1) {
+      L.polyline(coords, { weight: 4, color: '#d33' }).addTo(map.routeLayer);
+    }
     map.state.routeCoords = coords;
     map.state.lastKm = haversineKm(coords);
     renderRouteInfo(map);

@@ -25,6 +25,7 @@ if (PHP_SAPI !== 'cli') {
 require_once __DIR__ . '/../api/db.php';
 require_once __DIR__ . '/../api/crypto.php';
 require_once __DIR__ . '/../api/webdav-client.php';
+require_once __DIR__ . '/../api/image-process.php'; // tl_normalize_jpeg (GD)
 
 const TL_TARGET_BYTES  = 200 * 1024; // Zielgröße pro Bild (~200 KB)
 const TL_HARD_MAX_SIDE = 1600;
@@ -84,48 +85,8 @@ function read_exif_bytes(string $jpeg): array
     return $out;
 }
 
-// JPEG-Bytes mit GD auf ~Zielgröße verkleinern (erst Qualität, dann Kante).
-// Entspricht fileToTargetJpeg im Browser. Rückgabe: JPEG-Bytes oder null.
-function shrink_jpeg(string $jpeg): ?string
-{
-    $src = @imagecreatefromstring($jpeg);
-    if ($src === false) {
-        return null;
-    }
-    $w = imagesx($src);
-    $h = imagesy($src);
-    $maxSide = min(TL_HARD_MAX_SIDE, max($w, $h));
-    $best = null;
-
-    for ($round = 0; $round < 6; $round++) {
-        $scale = min(1.0, $maxSide / max($w, $h));
-        $nw = max(1, (int) round($w * $scale));
-        $nh = max(1, (int) round($h * $scale));
-        $img = imagecreatetruecolor($nw, $nh);
-        imagecopyresampled($img, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
-
-        foreach ([85, 72, 60, 50] as $q) {
-            ob_start();
-            imagejpeg($img, null, $q);
-            $bytes = (string) ob_get_clean();
-            if ($best === null || strlen($bytes) < strlen($best)) {
-                $best = $bytes;
-            }
-            if (strlen($bytes) <= TL_TARGET_BYTES) {
-                imagedestroy($img);
-                imagedestroy($src);
-                return $bytes;
-            }
-        }
-        imagedestroy($img);
-        $maxSide = (int) round($maxSide * 0.8);
-        if ($maxSide < 480) {
-            break;
-        }
-    }
-    imagedestroy($src);
-    return $best;
-}
+// Verkleinern + Metadaten strippen + Orientation anwenden erledigt jetzt
+// tl_normalize_jpeg() aus api/image-process.php (gemeinsam mit upload.php).
 
 // ---- Hauptlauf -------------------------------------------------------
 
@@ -209,7 +170,7 @@ foreach ($conns as $c) {
             logline("  $href: kein GPS — übersprungen.");
             continue;
         }
-        $small = shrink_jpeg($get['body']);
+        $small = tl_normalize_jpeg($get['body'], TL_TARGET_BYTES, TL_HARD_MAX_SIDE);
         if ($small === null) {
             $skipped++;
             logline("  $href: nicht dekodierbar — übersprungen.");

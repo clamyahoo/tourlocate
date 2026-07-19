@@ -1,15 +1,19 @@
 <?php
 // Bild-Upload zu einer Präsentation.
 //   POST api/upload.php   (multipart/form-data)
-//     presentation_id, image (Datei, bereits client-seitig auf ~200 KB
-//     verkleinertes JPEG mit EXIF-Geodaten), lat, lng, taken_at, csrf
+//     presentation_id, image (JPEG, client-seitig schon auf ~200 KB
+//     verkleinert), lat, lng, taken_at, csrf
 //
-// Der Server verkleinert NICHT selbst (kein GD nötig) — das erledigt der
-// Browser (fileToTargetJpeg). Hier nur Validierung + Ablage.
+// Das Bild wird server-seitig mit GD neu kodiert (tl_normalize_jpeg):
+// dabei fallen ALLE EXIF-/Metadaten weg (Datenschutz — kein Kameramodell,
+// keine Seriennummer usw.), die Orientation wird vorher in die Pixel
+// gedreht. Erhalten bleiben nur Dateiname, Datum und Geoposition, und die
+// stehen getrennt in der Datenbank, nicht im Bild.
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/image-process.php';
 
 $uid = require_login();
 require_post();
@@ -34,13 +38,12 @@ if ($f['size'] > $maxBytes) {
     json_error('Bild ist zu groß (max. ' . round($maxBytes / 1024 / 1024) . ' MB).', 413);
 }
 
-// JPEG-Signatur prüfen (FF D8 FF) — dependency-frei, kein GD
-$fh = fopen($f['tmp_name'], 'rb');
-$sig = $fh ? fread($fh, 3) : '';
-if ($fh) {
-    fclose($fh);
-}
-if (strlen($sig) < 3 || ord($sig[0]) !== 0xFF || ord($sig[1]) !== 0xD8 || ord($sig[2]) !== 0xFF) {
+// Bilddaten lesen und server-seitig normalisieren (Orientation anwenden,
+// alle Metadaten strippen, auf ~200 KB bringen). Nicht-JPEG/kaputte
+// Dateien scheitern hier und werden abgewiesen.
+$raw = file_get_contents($f['tmp_name']);
+$clean = $raw !== false ? tl_normalize_jpeg($raw) : null;
+if ($clean === null) {
     json_error('Nur JPEG-Bilder werden akzeptiert.', 415);
 }
 
@@ -51,8 +54,7 @@ if (!is_dir($dir) && !@mkdir($dir, 0770, true) && !is_dir($dir)) {
 }
 
 $name = bin2hex(random_bytes(8)) . '.jpg';
-$dest = $dir . '/' . $name;
-if (!move_uploaded_file($f['tmp_name'], $dest)) {
+if (file_put_contents($dir . '/' . $name, $clean) === false) {
     json_error('Bild konnte nicht gespeichert werden.', 500);
 }
 

@@ -1,0 +1,3 @@
+# Secrets und Laufzeitdaten gehören NICHT ins Repo
+api/config.php
+data/

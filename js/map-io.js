@@ -37,6 +37,25 @@ export function setupIO(map) {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) bind(); });
 }
 
+// Server-Modus (Editor): Bild-URLs (api/image.php?id=…) vorab zu Base64
+// auflösen, damit die Export-Funktionen unverändert greifen. In der
+// statischen App ist map.resolveImage nicht gesetzt → leere Map, die
+// Exporte nutzen dann direkt das schon vorhandene Base64 in p.img.
+async function resolveExportImages(map) {
+  const m = new Map();
+  if (typeof map.resolveImage !== 'function') return m;
+  for (const p of map.state.pois) {
+    if (p.img && !m.has(p.img)) {
+      try {
+        m.set(p.img, await map.resolveImage(p.img));
+      } catch (e) {
+        console.warn('Export: Bild konnte nicht aufgelöst werden:', p.img, e);
+      }
+    }
+  }
+  return m;
+}
+
 // Verbindungs-Geometrie für Exporte gemäß Einstellung
 function exportRoute(map) {
   if (getSetting('lineMode') === 'none') return [];
@@ -169,7 +188,8 @@ async function exportHtml(map, { zip }) {
   try {
     const snapshot = await captureMapSnapshot(map);
     const assets = await fetchLeafletAssets();
-    const { html, imgFiles } = buildExportHtml(map, snapshot, assets, { imageFolder: zip });
+    const imgMap = await resolveExportImages(map);
+    const { html, imgFiles } = buildExportHtml(map, snapshot, assets, { imageFolder: zip, imgMap });
 
     if (zip) {
       const files = [{ name: 'tourlocate.html', data: new TextEncoder().encode(html) }];
@@ -318,13 +338,16 @@ async function fetchLeafletAssets() {
 
 // Exportdatei bauen. imageFolder=true legt Bilder als eigene Dateien in
 // bilder/ ab (für den ZIP-Export) statt sie als Base64 einzubetten.
-function buildExportHtml(map, snapshot, assets, { imageFolder }) {
+function buildExportHtml(map, snapshot, assets, { imageFolder, imgMap }) {
   const S = map.state;
   const base = S.activeBase;
   const imgFiles = [];
 
   const GEO = S.pois.map((p, i) => {
-    let img = p.img || '';
+    // Server-Modus (Editor): p.img ist eine api/image.php-URL; imgMap
+    // liefert die vorab aufgelösten Base64-Daten. Statische App: p.img ist
+    // schon Base64, imgMap ist leer → Fallback auf p.img.
+    let img = p.img ? ((imgMap && imgMap.get(p.img)) || p.img) : '';
     if (img && imageFolder) {
       const name = 'bilder/station-' + String(i + 1).padStart(2, '0') + '.jpg';
       imgFiles.push({

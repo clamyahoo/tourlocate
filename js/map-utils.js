@@ -153,6 +153,87 @@ export async function fileToDataURL(file, maxSide = 1200, quality = 0.85) {
   }
 }
 
+// =============== Bild → JPEG-Bytes auf Zielgröße (~200 KB) ===============
+// Für die User-Version: verkleinert ein Bild so, dass die JPEG-Datei unter
+// targetBytes bleibt (erst Qualität senken, dann Kantenlänge). Liefert die
+// JPEG-Bytes (Uint8Array) — passend für Upload UND für writeExif-Stempelung.
+// fileToDataURL bleibt bewusst getrennt (die statische App hängt daran).
+export async function fileToTargetJpeg(file, targetBytes = 200 * 1024, hardMaxSide = 1600) {
+  const isHeic = /image\/hei[cf]/.test(file.type || '') || /\.hei[cf]$/i.test(file.name || '');
+  const src = isHeic ? await heicToJpegBlob(file, 0.9) : file;
+
+  const loadImage = (url) => new Promise((resolve, reject) => {
+    const img = new Image();
+    const to = setTimeout(() => reject(new Error('img-load-timeout')), 8000);
+    img.onload = () => { clearTimeout(to); resolve(img); };
+    img.onerror = () => { clearTimeout(to); reject(new Error('img-load-error')); };
+    img.src = url;
+  });
+
+  // Persistente Bildquelle (mehrfaches Enkodieren nötig)
+  let drawable, width, height, cleanup = () => {};
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = () => reject(fr.error || new Error('filereader-error'));
+      fr.readAsDataURL(src);
+    });
+    const img = await loadImage(dataUrl);
+    drawable = img; width = img.naturalWidth; height = img.naturalHeight;
+  } catch (e) {
+    if ('createImageBitmap' in window) {
+      const bmp = await createImageBitmap(src);
+      drawable = bmp; width = bmp.width; height = bmp.height;
+      cleanup = () => bmp.close && bmp.close();
+    } else {
+      const url = URL.createObjectURL(src);
+      const img = await loadImage(url);
+      drawable = img; width = img.naturalWidth; height = img.naturalHeight;
+      cleanup = () => URL.revokeObjectURL(url); // erst nach dem Enkodieren
+    }
+  }
+
+  const encode = (maxSide, quality) => new Promise((resolve, reject) => {
+    const scale = Math.min(1, maxSide / Math.max(width, height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    canvas.getContext('2d').drawImage(drawable, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(async (blob) => {
+      if (!blob) { reject(new Error('canvas-toblob-null')); return; }
+      resolve(new Uint8Array(await blob.arrayBuffer()));
+    }, 'image/jpeg', quality);
+  });
+
+  try {
+    let maxSide = Math.min(hardMaxSide, Math.max(width, height));
+    let best = null;
+    for (let round = 0; round < 6; round++) {
+      for (const q of [0.85, 0.72, 0.6, 0.5]) {
+        const bytes = await encode(maxSide, q);
+        if (!best || bytes.length < best.length) best = bytes;
+        if (bytes.length <= targetBytes) return bytes;
+      }
+      maxSide = Math.round(maxSide * 0.8);
+      if (maxSide < 480) break;
+    }
+    return best; // bestes Ergebnis, falls das Ziel nicht ganz erreichbar war
+  } finally {
+    cleanup();
+  }
+}
+
+// Uint8Array → base64-DataURL (Gegenstück zu dataURLToBytes)
+export function bytesToDataURL(bytes, mime = 'image/jpeg') {
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return 'data:' + mime + ';base64,' + btoa(bin);
+}
+
 // DataURL (base64) → Bytes, z. B. für den ZIP-Export
 export function dataURLToBytes(dataUrl) {
   const b64 = dataUrl.slice(dataUrl.indexOf(',') + 1);

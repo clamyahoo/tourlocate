@@ -20,8 +20,8 @@ const STRINGS = {
     exportZip: 'HTML+Bilder (ZIP)',
     exportIms: 'IMS-Paket (Moodle)',
     sortPlaceholder: 'Sortieren…',
-    sortNameAsc: 'Name ↑',
-    sortNameDesc: 'Name ↓',
+    sortNameAsc: 'Bezeichnung ↑',
+    sortNameDesc: 'Bezeichnung ↓',
     sortDateAsc: 'Datum ↑',
     sortDateDesc: 'Datum ↓',
     // Einstellungs-Zeile

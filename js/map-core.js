@@ -23,6 +23,7 @@ export function initMap() {
     routeCoords: [],   // aktuelle Verbindungs-Geometrie als [[lat,lng],...]
     track: null,       // importierte Aufzeichnung (lineMode 'track'): [[lat,lng],...]
     lastKm: 0,         // letzte Gesamtdistanz (für Neuzeichnen bei Sprachwechsel)
+    undoStack: [],     // Zustands-Schnappschüsse für Rückgängig
     activeBase: TILE_LAYERS.OSM
   };
 

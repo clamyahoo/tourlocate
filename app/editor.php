@@ -107,6 +107,9 @@ $csrf = csrf_token();
       <details open class="sb-sec">
         <summary data-i18n="secStations">Stationen</summary>
         <div class="sb-row">
+          <button id="undoActionBtn" disabled data-i18n="undoAction" title="Ctrl+Z">Rückgängig</button>
+        </div>
+        <div class="sb-row">
           <button id="undoBtn" disabled data-i18n="undo">Letzte löschen</button>
           <button id="clearBtn" disabled data-i18n="clear">Alles löschen</button>
         </div>

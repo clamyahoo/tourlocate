@@ -28,6 +28,7 @@ export function createPoi(map, { lat, lng, name = '', link = '', linkText = '', 
     marker
   };
 
+  marker.on('dragstart', () => pushUndo(map)); // Verschieben ist rückgängig machbar
   marker.on('dragend', e => {
     const ll = e.target.getLatLng();
     p.lat = ll.lat;
@@ -122,6 +123,50 @@ export function bindPoiPopup(map, p, i) {
   if (popup) delete popup._tlDialog;
 }
 
+// ==================== Rückgängig (Undo) ====================
+// Schnappschuss des relevanten Zustands. track wird nie in place geändert
+// (nur ersetzt), daher genügt die Referenz — spart Speicher bei großen
+// Aufzeichnungen.
+function snapshotState(map) {
+  return {
+    lineMode: getSetting('lineMode'),
+    track: map.state.track,
+    pois: map.state.pois.map(p => ({
+      lat: p.lat, lng: p.lng, name: p.name, link: p.link,
+      linkText: p.linkText, img: p.img, createdAt: p.createdAt
+    }))
+  };
+}
+
+// Vor einer zustandsändernden Aktion aufrufen.
+export function pushUndo(map) {
+  const stack = map.state.undoStack;
+  stack.push(snapshotState(map));
+  if (stack.length > 40) stack.shift();
+  map.onHistoryChanged?.();
+}
+
+// Zuletzt gepushten Schnappschuss verwerfen (bei abgebrochener Aktion).
+export function popUndo(map) {
+  map.state.undoStack.pop();
+  map.onHistoryChanged?.();
+}
+
+// Letzten Schnappschuss wiederherstellen.
+export function undo(map) {
+  const snap = map.state.undoStack.pop();
+  if (!snap) return;
+  map.state.pois.forEach(p => map.markersLayer.removeLayer(p.marker));
+  map.state.pois.length = 0;
+  map.state.track = snap.track;
+  setSetting('lineMode', snap.lineMode);
+  // createPoi rastet NICHT ein → exakte Positionen bleiben erhalten
+  snap.pois.forEach(sp => createPoi(map, sp));
+  map.onTrackChanged?.();
+  renumberAndRoute(map);
+  map.onHistoryChanged?.();
+}
+
 // Nummern-Icons setzen, Popups rebinden, Route & Button-Zustände aktualisieren
 export function renumberAndRoute(map) {
   // In der Track-Ansicht folgt die Nummerierung dem Streckenverlauf
@@ -183,6 +228,7 @@ export function sortPois(map, key, dir) {
 // Erstellungsgesten (Desktop: Doppelklick/Rechtsklick, mobil: Tippen/Langdruck)
 export function setupPOIs(map) {
   const startCreation = latlng => {
+    pushUndo(map); // Anlegen rückgängig machbar (bei Abbruch verworfen)
     // Beim Anlegen im Track-Modus auf die Aufzeichnung einrasten
     const { lat, lng } = snapIfTrack(map, latlng.lat, latlng.lng);
     const p = createPoi(map, { lat, lng });

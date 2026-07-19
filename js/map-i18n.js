@@ -6,6 +6,7 @@ const STRINGS = {
   de: {
     // Toolbar
     hint: 'Doppelklick / Rechtsklick (mobil: Tippen / lange drücken) = neue Station',
+    undoAction: 'Rückgängig',
     undo: 'Letzte löschen',
     clear: 'Alles löschen',
     importGeo: 'GeoJSON importieren…',
@@ -119,6 +120,7 @@ const STRINGS = {
 
   en: {
     hint: 'Double-click / right-click (mobile: tap / long-press) = new station',
+    undoAction: 'Undo',
     undo: 'Remove last',
     clear: 'Clear all',
     importGeo: 'Import GeoJSON…',

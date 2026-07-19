@@ -6,7 +6,7 @@ import { getSetting, setSetting } from './map-settings.js';
 import { t, getLang, setLang, applyI18n } from './map-i18n.js';
 import { fileToDataURL } from './map-utils.js';
 import { applyRoutingSettings, setRouteWaypoints, renderRouteInfo } from './map-core.js';
-import { bindPoiPopup, renumberAndRoute, removePoi, removeLastPoi, clearPois, sortPois } from './map-pois.js';
+import { bindPoiPopup, renumberAndRoute, removePoi, removeLastPoi, clearPois, sortPois, pushUndo, popUndo, undo } from './map-pois.js';
 import { importFromWebdav, webdavErrorMessage } from './map-webdav.js';
 import { importPhotoFiles } from './map-photos.js';
 
@@ -225,7 +225,8 @@ export function openPoiDialog(map, p, mode) {
     deleteBtn.onclick = ev => {
       ev.stopPropagation();
       p.marker.off('popupclose', onPopupClose);
-      removePoi(map, p); // schließt das Popup automatisch mit
+      pushUndo(map);      // Löschen einer Station rückgängig machbar
+      removePoi(map, p);  // schließt das Popup automatisch mit
     };
     actionRow.appendChild(deleteBtn);
   }
@@ -251,6 +252,7 @@ export function openPoiDialog(map, p, mode) {
     p.marker.off('popupclose', onPopupClose);
     if (isCreate) {
       removePoi(map, p);
+      popUndo(map); // abgebrochenes Anlegen: Snapshot von startCreation verwerfen
     } else {
       bindPoiPopup(map, p, map.state.pois.indexOf(p));
     }
@@ -258,6 +260,7 @@ export function openPoiDialog(map, p, mode) {
 
   const save = () => {
     p.marker.off('popupclose', onPopupClose);
+    if (!isCreate) pushUndo(map); // Bearbeiten rückgängig machbar (Anlegen bereits gepusht)
     p.name = nameInput.value.trim();
     p.link = linkInput.value.trim();
     p.linkText = linkTextInput.value.trim();
@@ -320,6 +323,13 @@ export function openPoiDialog(map, p, mode) {
 export function setupUI(map) {
   _map = map;
 
+  // Rückgängig-Knopf hängt am Undo-Stapel, nicht an den POIs
+  const updateHistoryBtn = () => {
+    const b = $('undoActionBtn');
+    if (b) b.disabled = map.state.undoStack.length === 0;
+  };
+  map.onHistoryChanged = updateHistoryBtn;
+
   const updateButtons = () => {
     const off = map.state.pois.length === 0;
     ['undoBtn', 'clearBtn', 'exportGeoBtn', 'exportGpxBtn', 'exportHtmlBtn', 'exportZipBtn', 'exportImsBtn', 'sortSel']
@@ -354,17 +364,24 @@ export function setupUI(map) {
 
   // onclick-Zuweisung ist idempotent → gefahrlos wiederholbar (bfcache/DDG)
   const bindToolbar = () => {
-    $('undoBtn').onclick = () => removeLastPoi(map);
+    $('undoBtn').onclick = () => {
+      if (map.state.pois.length) { pushUndo(map); removeLastPoi(map); }
+    };
     $('clearBtn').onclick = () => {
       if (map.state.pois.length && confirm(t('confirmClear'))) {
+        pushUndo(map);
         clearPois(map);
       }
     };
 
+    // Rückgängig (allgemein, für alle Aktionen)
+    const undoBtn2 = $('undoActionBtn');
+    if (undoBtn2) undoBtn2.onclick = () => undo(map);
+
     // Sortierung: Auswahl löst einmalige Sortierung aus
     $('sortSel').onchange = e => {
       const [key, dir] = e.target.value.split('-');
-      if (key) sortPois(map, key, dir);
+      if (key) { pushUndo(map); sortPois(map, key, dir); }
     };
 
     // Verbindungsart & Profil
@@ -422,15 +439,18 @@ export function setupUI(map) {
   const runPhotoImport = async files => {
     const ri = $('routeinfo');
     const prev = ri.textContent;
+    pushUndo(map); // Import rückgängig machbar
     try {
       const result = await importPhotoFiles(map, files, (done, total) => {
         ri.textContent = t('photoLoading', { done, total });
       });
       ri.textContent = prev;
+      if (!result.imported) popUndo(map); // nichts importiert → Snapshot verwerfen
       if (result.total === 0) alert(t('photoNone'));
       else alert(t('photoResult', { imported: result.imported, skipped: result.skipped }));
     } catch (e) {
       ri.textContent = prev;
+      popUndo(map);
       console.error('Foto-Import fehlgeschlagen:', e);
     }
   };
@@ -481,14 +501,17 @@ export function setupUI(map) {
       const ri = $('routeinfo');
       const prev = ri.textContent;
       btn.disabled = true;
+      pushUndo(map); // Import rückgängig machbar
       try {
         const result = await importFromWebdav(map, (done, total) => {
           ri.textContent = t('webdavLoading', { done, total });
         });
         ri.textContent = prev;
+        if (!result.imported) popUndo(map);
         alert(t('webdavResult', { imported: result.imported, skipped: result.skipped }));
       } catch (e) {
         ri.textContent = prev;
+        popUndo(map);
         alert(webdavErrorMessage(e));
       } finally {
         btn.disabled = false;
@@ -511,10 +534,17 @@ export function setupUI(map) {
   window.addEventListener('pageshow', bindToolbar);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) bindToolbar(); });
 
-  // ESC schließt offene Popups
+  // ESC schließt offene Popups; Ctrl/Cmd+Z macht rückgängig
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && map._popup) map.closePopup();
+    if (e.key === 'Escape' && map._popup) { map.closePopup(); return; }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
+      e.preventDefault();
+      undo(map);
+    }
   });
 
   updateButtons();
+  updateHistoryBtn();
 }

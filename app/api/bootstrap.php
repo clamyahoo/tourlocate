@@ -150,6 +150,31 @@ function now_iso(): string
     return gmdate('Y-m-d\TH:i:s\Z');
 }
 
+// ---- Globale Einstellungen (app_settings) ---------------------------
+
+function tl_setting(string $key, ?string $default = null): ?string
+{
+    $st = db()->prepare('SELECT value FROM app_settings WHERE key = ?');
+    $st->execute([$key]);
+    $v = $st->fetchColumn();
+    return $v === false ? $default : (string) $v;
+}
+
+function tl_setting_set(string $key, string $value): void
+{
+    db()->prepare(
+        'INSERT INTO app_settings (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = ?'
+    )->execute([$key, $value, $value]);
+}
+
+// Registrierungsmodus: open | invite | closed (Standard: open)
+function tl_registration_mode(): string
+{
+    $m = tl_setting('registration_mode', 'open');
+    return in_array($m, ['open', 'invite', 'closed'], true) ? $m : 'open';
+}
+
 // UTF-8-sichere Kürzung auf max. $max Zeichen — nutzt mbstring, wenn
 // vorhanden, sonst PCRE-Fallback (kein mbstring als Pflicht-Abhängigkeit).
 function tl_str_limit(string $s, int $max): string

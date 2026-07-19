@@ -51,6 +51,26 @@ function register(array $input): void
     $ipKey = 'register:ip:' . tl_client_ip();
     tl_rate_guard($ipKey);
 
+    // Registrierungsmodus prüfen (open/invite/closed)
+    $mode = tl_registration_mode();
+    if ($mode === 'closed') {
+        json_error('Die Registrierung ist derzeit deaktiviert.', 403);
+    }
+    $invite = null;
+    if ($mode === 'invite') {
+        $token = trim((string) ($input['invite'] ?? ''));
+        if ($token === '') {
+            json_error('Für die Registrierung ist eine Einladung nötig.', 403);
+        }
+        $st = db()->prepare('SELECT * FROM invites WHERE token = ? AND used_by IS NULL');
+        $st->execute([$token]);
+        $invite = $st->fetch();
+        if (!$invite) {
+            tl_rate_fail($ipKey, 10);
+            json_error('Einladung ungültig oder bereits verwendet.', 403);
+        }
+    }
+
     $email = trim(strtolower((string) ($input['email'] ?? '')));
     $pass  = (string) ($input['password'] ?? '');
 
@@ -75,9 +95,17 @@ function register(array $input): void
         }
         json_error('Datenbankfehler bei der Registrierung.', 500);
     }
+    // ID SOFORT nach dem INSERT festhalten — spätere Schreibzugriffe (z. B.
+    // tl_rate_fail auf rate_limits) würden lastInsertId() sonst überschreiben.
+    $newUid = (int) db()->lastInsertId();
     tl_rate_fail($ipKey, 10); // jede Konto-Anlage zählt gegen das IP-Limit
 
-    login_user((int) db()->lastInsertId());
+    // Einladung als verbraucht markieren (einmalig)
+    if ($invite) {
+        db()->prepare('UPDATE invites SET used_by = ?, used_at = ? WHERE id = ?')
+            ->execute([$newUid, now_iso(), (int) $invite['id']]);
+    }
+    login_user($newUid);
     json_out(['ok' => true, 'user' => ['email' => $email], 'csrf' => csrf_token()]);
 }
 

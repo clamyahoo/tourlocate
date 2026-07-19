@@ -116,6 +116,27 @@ function tl_migrate(PDO $pdo): void
         );
     SQL);
 
+    // Globale Einstellungen (Key/Value), u. a. Registrierungsmodus
+    $pdo->exec(<<<'SQL'
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+    SQL);
+
+    // Einmal-Einladungen für den Registrierungsmodus "invite"
+    $pdo->exec(<<<'SQL'
+        CREATE TABLE IF NOT EXISTS invites (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            token      TEXT UNIQUE NOT NULL,
+            note       TEXT,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            used_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL,
+            used_at    TEXT
+        );
+    SQL);
+
     // Inhalts-Meldungen aus der öffentlichen Ansicht (Notice-and-Takedown)
     $pdo->exec(<<<'SQL'
         CREATE TABLE IF NOT EXISTS reports (

@@ -9,6 +9,18 @@ if (current_user_id() !== null) {
     exit;
 }
 $csrf = csrf_token();
+
+// Registrierung: Modus + ggf. mitgeschickter Einladungs-Token
+$regMode = tl_registration_mode();
+$inviteToken = trim((string) ($_GET['invite'] ?? ''));
+$inviteValid = false;
+if ($regMode === 'invite' && $inviteToken !== '') {
+    $st = db()->prepare('SELECT 1 FROM invites WHERE token = ? AND used_by IS NULL');
+    $st->execute([$inviteToken]);
+    $inviteValid = (bool) $st->fetchColumn();
+}
+// Selbstregistrierung möglich? (offen; oder Einladung mit gültigem Token)
+$canRegister = $regMode === 'open' || ($regMode === 'invite' && $inviteValid);
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -60,7 +72,9 @@ $csrf = csrf_token();
     <button type="submit" id="submitBtn">Anmelden</button>
   </form>
   <div class="switch" id="switchLine">
-    Noch kein Konto? <a id="switchLink">Registrieren</a>
+    <?php if ($canRegister): ?>Noch kein Konto? <a id="switchLink">Registrieren</a>
+    <?php elseif ($regMode === 'invite'): ?><span style="color:#889">Registrierung nur mit Einladung.</span>
+    <?php endif; ?>
   </div>
   <div class="msg" id="msg"></div>
   <div style="margin-top:16px;text-align:center;font-size:12px">
@@ -93,10 +107,15 @@ function setMode(m) {
     switchLine.innerHTML = 'Schon ein Konto? <a id="switchLink">Anmelden</a>';
     pwInput.autocomplete = 'new-password';
   }
-  document.getElementById('switchLink').onclick = () => setMode(m === 'login' ? 'register' : 'login');
+  const sl = document.getElementById('switchLink');
+  if (sl) sl.onclick = () => setMode(m === 'login' ? 'register' : 'login');
   msg.textContent = '';
 }
-switchLink.onclick = () => setMode('register');
+const CAN_REGISTER = <?= $canRegister ? 'true' : 'false' ?>;
+const INVITE_TOKEN = <?= json_encode($inviteToken) ?>;
+if (switchLink) switchLink.onclick = () => setMode('register');
+// Mit gültigem Einladungslink direkt im Registrierungsmodus starten
+if (CAN_REGISTER && INVITE_TOKEN) setMode('register');
 
 let awaiting2fa = false;
 
@@ -110,7 +129,8 @@ document.getElementById('authForm').addEventListener('submit', async (e) => {
     const action = awaiting2fa ? 'totp' : mode;
     const body = awaiting2fa
       ? { code: document.getElementById('totpCode').value.trim(), csrf: CSRF }
-      : { email: document.getElementById('email').value, password: pwInput.value, csrf: CSRF };
+      : { email: document.getElementById('email').value, password: pwInput.value, csrf: CSRF,
+          invite: (mode === 'register' ? INVITE_TOKEN : undefined) };
     const res = await fetch('api/auth.php?action=' + action, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },

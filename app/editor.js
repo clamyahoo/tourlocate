@@ -9,24 +9,17 @@ import { setupUI } from '../js/map-ui.js';
 import { setupIO } from '../js/map-io.js';
 import { getSetting, setSetting } from '../js/map-settings.js';
 import { fileToTargetJpeg } from '../js/map-utils.js';
-import { writeExif } from '../js/map-exif.js';
 
 const { pid, csrf } = window.TL_EDITOR;
 const $ = id => document.getElementById(id);
 
-// ---- Upload-Hook: Datei → ~200-KB-JPEG mit EXIF → Server → URL --------
+// ---- Upload-Hook: Datei → ~200-KB-JPEG → Server → URL -----------------
+// Kein EXIF-Stempeln mehr client-seitig: der Server (upload.php →
+// tl_normalize_jpeg) kodiert das Bild ohnehin neu und entfernt dabei alle
+// Metadaten. Geoposition und Datum gehen als Formularfelder mit und landen
+// in der Datenbank (nicht im Bild).
 async function imageStore(file, meta = {}) {
-  let bytes = await fileToTargetJpeg(file, 200 * 1024);
-  // Geodaten/Datum in die JPEG-Datei stempeln (Canvas-Re-Encoding hat
-  // vorhandene EXIF entfernt) — nützlich für den späteren ZIP-Export.
-  try {
-    bytes = writeExif(bytes, {
-      lat: meta.lat, lng: meta.lng,
-      dateIso: meta.date || '', description: meta.name || ''
-    });
-  } catch (e) {
-    console.warn('EXIF-Stempeln übersprungen:', e);
-  }
+  const bytes = await fileToTargetJpeg(file, 200 * 1024);
 
   const fd = new FormData();
   fd.append('presentation_id', pid);

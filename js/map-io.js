@@ -27,7 +27,7 @@ export function setupIO(map) {
     $('fileGeo').onchange = e => importGeoFile(map, e.target);
     $('fileGpx').onchange = e => importGpxFile(map, e.target);
 
-    $('exportGeoBtn').onclick = () => triggerBlobDownload(exportFilename('geojson'), buildGeoJSONBlob(map));
+    $('exportGeoBtn').onclick = async () => triggerBlobDownload(exportFilename('geojson'), await buildGeoJSONBlob(map));
     $('exportGpxBtn').onclick = () => triggerBlobDownload(exportFilename('gpx'), buildGpxBlob(map));
     $('exportHtmlBtn').onclick = () => exportHtml(map, { zip: false });
     $('exportZipBtn').onclick = () => exportHtml(map, { zip: true });
@@ -66,12 +66,20 @@ function exportRoute(map) {
 }
 
 // ==================== Export: GeoJSON ====================
-export function buildGeoJSONBlob(map) {
+// async, weil im Server-Modus (Editor) die Bild-URLs vorab zu Base64
+// aufgelöst werden — sonst enthielte die Datei nur login-geschützte
+// api/image.php-URLs statt eigenständiger Bilddaten.
+export async function buildGeoJSONBlob(map) {
+  const imgMap = await resolveExportImages(map);
   const fc = {
     type: 'FeatureCollection',
     features: map.state.pois.map((p, i) => ({
       type: 'Feature',
-      properties: { index: i + 1, name: p.name, link: p.link, linkText: p.linkText || '', img: p.img, createdAt: p.createdAt || '' },
+      properties: {
+        index: i + 1, name: p.name, link: p.link, linkText: p.linkText || '',
+        img: p.img ? ((imgMap && imgMap.get(p.img)) || p.img) : '',
+        createdAt: p.createdAt || ''
+      },
       geometry: { type: 'Point', coordinates: [p.lng, p.lat] }
     }))
   };

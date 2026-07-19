@@ -21,6 +21,7 @@ export function initMap() {
   map.state = {
     pois: [],          // [{lat, lng, name, link, img, createdAt, marker}]
     routeCoords: [],   // aktuelle Verbindungs-Geometrie als [[lat,lng],...]
+    track: null,       // importierte Aufzeichnung (lineMode 'track'): [[lat,lng],...]
     lastKm: 0,         // letzte Gesamtdistanz (für Neuzeichnen bei Sprachwechsel)
     activeBase: TILE_LAYERS.OSM
   };
@@ -92,8 +93,23 @@ export function renderRouteInfo(map) {
     : '';
 }
 
+// Index des Track-Punktes, der (lat,lng) am nächsten liegt. Quadratischer
+// Abstand reicht für "am nächsten" (kein Wurzelziehen nötig).
+export function snapToTrackIndex(track, lat, lng) {
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < track.length; i++) {
+    const dLat = track[i][0] - lat;
+    const dLng = track[i][1] - lng;
+    const d = dLat * dLat + dLng * dLng;
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
 // Verbindung gemäß Einstellung neu aufbauen:
-// 'route' → OSRM, 'straight' → Luftlinie, 'none' → nichts
+// 'route' → OSRM, 'straight' → Luftlinie, 'track' → aufgezeichnete
+// Strecke, 'none' → nichts
 export function setRouteWaypoints(map) {
   const pois = map.state.pois;
   const mode = getSetting('lineMode');
@@ -104,6 +120,27 @@ export function setRouteWaypoints(map) {
     map.routingControl.setWaypoints([]);
     map.state.routeCoords = [];
     map.state.lastKm = 0;
+    renderRouteInfo(map);
+    return;
+  }
+
+  // Aufgezeichnete Strecke: Stationen auf den Track einrasten und den
+  // Abschnitt der echten Aufzeichnung zwischen erster und letzter Station
+  // zeichnen (nicht OSRM/Luftlinie).
+  if (mode === 'track') {
+    map.routingControl.setWaypoints([]);
+    const track = map.state.track;
+    if (!track || track.length < 2) {
+      map.state.routeCoords = [];
+      map.state.lastKm = 0;
+      renderRouteInfo(map);
+      return;
+    }
+    const idx = pois.map(p => snapToTrackIndex(track, p.lat, p.lng));
+    const coords = track.slice(Math.min(...idx), Math.max(...idx) + 1);
+    L.polyline(coords, { weight: 4, color: '#d33' }).addTo(map.routeLayer);
+    map.state.routeCoords = coords;
+    map.state.lastKm = haversineKm(coords);
     renderRouteInfo(map);
     return;
   }

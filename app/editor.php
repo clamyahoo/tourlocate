@@ -157,6 +157,7 @@ $csrf = csrf_token();
           <select id="lineModeSel">
             <option value="route" data-i18n="connRoute">Route</option>
             <option value="straight" data-i18n="connStraight">Luftlinie</option>
+            <option value="track" data-i18n="connTrack" disabled>Aufgezeichnete Strecke</option>
             <option value="none" data-i18n="connNone">keine</option>
           </select>
         </label>

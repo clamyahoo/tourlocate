@@ -337,6 +337,21 @@ export function setupUI(map) {
     $('profileSel').disabled = getSetting('lineMode') !== 'route';
   };
 
+  // Die Option "Aufgezeichnete Strecke" nur anbieten, wenn ein Track
+  // importiert wurde. Wird über map.onTrackChanged aus Import/Löschen/
+  // Präsentations-Laden angestoßen.
+  const updateTrackOption = () => {
+    const sel = $('lineModeSel');
+    const opt = sel.querySelector('option[value="track"]');
+    const has = !!(map.state.track && map.state.track.length);
+    if (opt) opt.disabled = !has;
+    // Track entfernt, aber noch ausgewählt → zurück auf Route
+    if (!has && getSetting('lineMode') === 'track') setSetting('lineMode', 'route');
+    sel.value = getSetting('lineMode');
+    updateProfileState();
+  };
+  map.onTrackChanged = updateTrackOption;
+
   // onclick-Zuweisung ist idempotent → gefahrlos wiederholbar (bfcache/DDG)
   const bindToolbar = () => {
     $('undoBtn').onclick = () => removeLastPoi(map);
@@ -488,7 +503,7 @@ export function setupUI(map) {
 
   applyI18n();
   updateLangBtn();
-  updateProfileState();
+  updateTrackOption();
   bindToolbar();
   bindWebdav();
   bindPhotos();

@@ -2,7 +2,7 @@
 // Ein-Datei-HTML und HTML+Bilder als ZIP
 
 import { CDN } from './map-config.js';
-import { getSetting } from './map-settings.js';
+import { getSetting, setSetting } from './map-settings.js';
 import { t } from './map-i18n.js';
 import {
   readFileAsText, triggerBlobDownload, escapeXml,
@@ -135,6 +135,22 @@ function importGeoFile(map, input) {
   }).finally(() => { input.value = ''; });
 }
 
+// Track-Geometrie (<trk>/<rte> → LineString/MultiLineString) als
+// [[lat,lng],...] extrahieren; null, wenn keine brauchbare Strecke da ist.
+function extractTrack(gj) {
+  const coords = [];
+  (gj.features || []).forEach(ft => {
+    const g = ft?.geometry;
+    if (!g) return;
+    if (g.type === 'LineString') {
+      g.coordinates.forEach(c => coords.push([c[1], c[0]]));
+    } else if (g.type === 'MultiLineString') {
+      g.coordinates.forEach(seg => seg.forEach(c => coords.push([c[1], c[0]])));
+    }
+  });
+  return coords.length >= 2 ? coords : null;
+}
+
 function importGpxFile(map, input) {
   const f = input.files && input.files[0];
   if (!f) return;
@@ -151,7 +167,37 @@ function importGpxFile(map, input) {
       alert(t('invalidGpx'));
       return;
     }
-    importFeatures(map, gj, { namesOnly: true });
+
+    const track = extractTrack(gj);
+    const hasPoints = (gj.features || []).some(ft => ft?.geometry?.type === 'Point');
+    if (!track && !hasPoints) {
+      alert(t('invalidGpx'));
+      return;
+    }
+
+    // Aufzeichnung übernehmen und in den Track-Modus schalten (Stationen
+    // rasten dann auf die Strecke ein, die Verbindung folgt der Aufnahme).
+    map.state.track = track;
+    if (track) setSetting('lineMode', 'track');
+    map.onTrackChanged?.();
+
+    if (hasPoints) {
+      // Wegpunkte sind die Stationen (rasten im Track-Modus auf die Strecke)
+      importFeatures(map, gj, { namesOnly: true });
+    } else {
+      // Reine Aufzeichnung ohne Wegpunkte: Start + Ende als Stationen
+      const s = track[0];
+      const e = track[track.length - 1];
+      createPoi(map, { lat: s[0], lng: s[1], name: t('trackStart') });
+      createPoi(map, { lat: e[0], lng: e[1], name: t('trackEnd') });
+      renumberAndRoute(map);
+    }
+
+    // An die gesamte Aufzeichnung heranzoomen (nicht nur an die 2 Marker)
+    if (track) {
+      const b = L.polyline(track).getBounds();
+      if (b.isValid()) map.fitBounds(b.pad(0.1));
+    }
   }).catch(err => {
     alert(t('gpxError', { msg: err?.message || err }));
     console.warn('Fehler beim GPX-Import:', err);

@@ -55,6 +55,11 @@ async function loadPresentation(map) {
   if ($('lineModeSel')) $('lineModeSel').value = P.line_mode;
   if ($('profileSel')) { $('profileSel').value = P.profile; $('profileSel').disabled = P.line_mode !== 'route'; }
 
+  // Aufgezeichnete Strecke (Track-Modus) VOR den POIs setzen, damit das
+  // Einrasten/Routing beim Anlegen schon greift.
+  map.state.track = (P.data && Array.isArray(P.data.track)) ? P.data.track : null;
+  if (map.onTrackChanged) map.onTrackChanged();
+
   const pois = (P.data && Array.isArray(P.data.pois)) ? P.data.pois : [];
   pois.forEach(sp => createPoi(map, {
     lat: sp.lat, lng: sp.lng,
@@ -81,7 +86,8 @@ async function save(map) {
     profile: getSetting('profile'),
     // Routen-Geometrie mitspeichern, damit die öffentliche Ansicht bei
     // "Route" die echte Strecke zeigt (ohne dort neu routen zu müssen).
-    data: { pois, route: map.state.routeCoords || [] },
+    // track = importierte Aufzeichnung (für den Track-Modus, editierbar).
+    data: { pois, route: map.state.routeCoords || [], track: map.state.track || null },
     csrf
   };
   const res = await fetch('api/presentations.php?action=save', {

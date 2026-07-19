@@ -1,0 +1,24 @@
+# Tourlocate als Docker-Stack (auch direkt in Portainer als Stack
+# einfügbar: Stacks → Add stack → Web editor → diesen Inhalt einfügen).
+#
+# Wichtig: das Volume "tourlocate_data" enthält die SQLite-Datenbank,
+# alle hochgeladenen Bilder UND den automatisch erzeugten
+# Verschlüsselungsschlüssel (app/data/config.php) — NICHT löschen,
+# sonst sind Konten/Präsentationen/WebDAV-Passwörter weg.
+services:
+  tourlocate:
+    build: .
+    # Alternativ, falls das Image z. B. über eine GitHub-Container-
+    # Registry bezogen wird, statt "build:" einfach "image: …" setzen.
+    ports:
+      - "8080:80"
+    volumes:
+      - tourlocate_data:/var/www/html/app/data
+    environment:
+      # Auf false setzen, wenn (noch) kein HTTPS vor dem Container läuft
+      # — sonst wird der Session-Cookie vom Browser verworfen.
+      TOURLOCATE_COOKIE_SECURE: "true"
+    restart: unless-stopped
+
+volumes:
+  tourlocate_data:

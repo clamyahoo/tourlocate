@@ -1,0 +1,8 @@
+# WebDAV-Poller alle 5 Minuten. cron kennt im Container kaum PATH/ENV,
+# deshalb hier explizit setzen. Läuft als www-data (nicht root).
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+*/5 * * * * www-data php /var/www/html/app/cron/poll-webdav.php >> /var/log/tourlocate-cron.log 2>&1
+
+# Cron-Dateien unter /etc/cron.d/ brauchen eine abschließende Leerzeile.

@@ -1,0 +1,5 @@
+.git
+.gitignore
+app/data
+app/api/config.php
+node_modules

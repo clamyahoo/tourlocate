@@ -4,6 +4,7 @@ import { setRouteWaypoints, snapToTrackIndex, trackAnchor } from './map-core.js'
 import { getSetting, setSetting } from './map-settings.js';
 import { t, formatDateTime } from './map-i18n.js';
 import { openPoiDialog, openLightbox } from './map-ui.js';
+import { safeUrl } from './map-utils.js';
 
 // Position auf den nächsten aufgezeichneten Punkt einrasten (nur im
 // Track-Modus). Wird beim interaktiven Anlegen genutzt.
@@ -77,10 +78,11 @@ export function bindPoiPopup(map, p, i) {
     card.appendChild(dateEl);
   }
 
-  if (p.link) {
+  const href = safeUrl(p.link);
+  if (href) {
     const div = document.createElement('div');
     const a = document.createElement('a');
-    a.href = p.link;
+    a.href = href; // safeUrl blockt javascript:/data: usw.
     a.target = '_blank';
     a.rel = 'noopener';
     a.textContent = p.linkText || t('link');

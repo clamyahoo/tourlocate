@@ -537,6 +537,7 @@ ${leafletJsBlock}
   }
   function sumKm(c){ if(!c||c.length<2) return 0; var s=0; for(var i=1;i<c.length;i++) s+=segKm(c[i-1],c[i]); return s; }
   function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function safeUrl(u){ u=String(u==null?'':u).replace(/[\\u0000-\\u001F]/g,'').trim(); if(!u) return ''; if(/^(https?:|mailto:|tel:)/i.test(u)) return u; if(/^[a-z][a-z0-9+.-]*:/i.test(u)) return ''; return u; }
 
   function init(){
     var data=JSON.parse(document.getElementById('tl-data').textContent);
@@ -569,7 +570,8 @@ ${leafletJsBlock}
           var d=new Date(p.createdAt);
           if (!isNaN(d)) dateHtml='<div class="tl-date">'+esc(d.toLocaleString())+'</div>';
         }
-        var linkHtml=p.link?'<div><a href="'+esc(p.link)+'" target="_blank" rel="noopener">'+esc(p.linkText||'Link')+'</a></div>':'';
+        var _lu=safeUrl(p.link);
+        var linkHtml=_lu?'<div><a href="'+esc(_lu)+'" target="_blank" rel="noopener">'+esc(p.linkText||'Link')+'</a></div>':'';
         var imgHtml=p.img?'<div><button type="button" class="thumb" data-img="'+esc(p.img)+'" data-title="'+esc(title)+'"><span class="tl-thumb"><img src="'+esc(p.img)+'" alt=""></span></button></div>':'';
         m.bindPopup('<div class="tl-card"><strong>'+esc(title)+'</strong>'+dateHtml+linkHtml+imgHtml+'</div>');
       });

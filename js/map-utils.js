@@ -67,6 +67,18 @@ export function escapeXml(s) {
     .replace(/"/g, '&quot;');
 }
 
+// Nutzer-Link entschärfen: nur http/https/mailto/tel (und schema-lose,
+// also relative URLs) zulassen. Blockt javascript:/data:/vbscript: usw.,
+// die als href sonst beim Klick Code ausführen würden (gespeichertes XSS).
+// Rückgabe: unveränderte URL oder '' (unerlaubt).
+export function safeUrl(url) {
+  const u = String(url ?? '').replace(/[\u0000-\u001F]/g, '').trim();
+  if (u === '') return '';
+  if (/^(https?:|mailto:|tel:)/i.test(u)) return u;       // erlaubtes Schema
+  if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return '';           // anderes Schema → blocken
+  return u;                                                // schema-los = relativ → ok
+}
+
 // =============== Distanz (Haversine) ===============
 export function haversineKm(coords) {
   if (!coords || coords.length < 2) return 0;

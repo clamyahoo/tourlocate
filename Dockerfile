@@ -3,10 +3,11 @@
 # eingebaut: pdo_sqlite, gd, exif, curl, sodium. Cron läuft im selben
 # Container für den WebDAV-Poller.
 #
-# Persistenz: /var/www/html/app/data muss als Volume gemountet werden
-# (SQLite-Datenbank, Uploads UND der automatisch erzeugte
-# Verschlüsselungsschlüssel — siehe docker/entrypoint.sh). Ohne dieses
-# Volume gehen bei jedem Neustart alle Konten/Präsentationen verloren.
+# Persistenz: /var/lib/tourlocate (AUSSERHALB des Web-Roots) muss als
+# Volume gemountet werden (SQLite-Datenbank, Uploads UND der automatisch
+# erzeugte Verschlüsselungsschlüssel — siehe docker/entrypoint.sh). Ohne
+# dieses Volume gehen bei jedem Neustart alle Konten/Präsentationen
+# verloren.
 
 FROM php:8.2-apache
 
@@ -38,10 +39,11 @@ RUN chmod 0644 /etc/cron.d/tourlocate-cron \
 COPY docker/entrypoint.sh /usr/local/bin/tourlocate-entrypoint.sh
 RUN chmod +x /usr/local/bin/tourlocate-entrypoint.sh
 
-# app/data wird beim Start angelegt/verlinkt (siehe entrypoint) — hier
-# nur sicherstellen, dass www-data grundsätzlich schreiben darf.
-RUN mkdir -p /var/www/html/app/data \
-    && chown -R www-data:www-data /var/www/html/app/data
+# Datenverzeichnis liegt außerhalb des Web-Roots (/var/lib/tourlocate,
+# dort wird das Volume eingehängt). Anlegen/Verlinken macht der Entrypoint;
+# hier nur sicherstellen, dass www-data grundsätzlich schreiben darf.
+RUN mkdir -p /var/lib/tourlocate \
+    && chown -R www-data:www-data /var/lib/tourlocate
 
 ENTRYPOINT ["tourlocate-entrypoint.sh"]
 CMD ["apache2-foreground"]

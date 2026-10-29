@@ -3,8 +3,9 @@
 #
 # Wichtig: das Volume "tourlocate_data" enthält die SQLite-Datenbank,
 # alle hochgeladenen Bilder UND den automatisch erzeugten
-# Verschlüsselungsschlüssel (app/data/config.php) — NICHT löschen,
-# sonst sind Konten/Präsentationen/WebDAV-Passwörter weg.
+# Verschlüsselungsschlüssel (config.php) — NICHT löschen, sonst sind
+# Konten/Präsentationen/WebDAV-Passwörter weg. Es wird außerhalb des
+# Web-Roots unter /var/lib/tourlocate eingehängt.
 services:
   tourlocate:
     build: .
@@ -13,7 +14,10 @@ services:
     ports:
       - "8080:80"
     volumes:
-      - tourlocate_data:/var/www/html/app/data
+      # Datenverzeichnis AUSSERHALB des Web-Roots (keine URL zeigt darauf).
+      # Dasselbe benannte Volume wie bisher — der Inhalt (DB, Uploads,
+      # config.php) bleibt beim Umhängen erhalten.
+      - tourlocate_data:/var/lib/tourlocate
     environment:
       # Auf false setzen, wenn (noch) kein HTTPS vor dem Container läuft
       # — sonst wird der Session-Cookie vom Browser verworfen.

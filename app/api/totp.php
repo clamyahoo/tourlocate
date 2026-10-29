@@ -15,6 +15,41 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/ratelimit.php';
+require_once __DIR__ . '/crypto.php'; // TOTP-Secret verschlüsselt ablegen
+
+// ---- TOTP-Secret verschlüsselt speichern ----------------------------
+// Das Secret liegt nicht mehr als Base32-Klartext in der DB, sondern mit
+// sodium verschlüsselt (wie die WebDAV-Passwörter). Format: 'enc:' +
+// base64(nonce . cipher). Alt-Werte ohne Präfix werden als Klartext
+// gelesen (und beim nächsten erfolgreichen Login migriert, siehe auth.php).
+
+function tl_totp_pack(string $secretB32): string
+{
+    [$cipher, $nonce] = tl_encrypt($secretB32);
+    return 'enc:' . base64_encode($nonce . $cipher);
+}
+
+// Entschlüsselt ein gespeichertes Secret zum Base32-Klartext. Legacy-
+// Klartext wird unverändert zurückgegeben; null bei beschädigten Daten.
+function tl_totp_unpack(string $stored): ?string
+{
+    if (strncmp($stored, 'enc:', 4) !== 0) {
+        return $stored; // Legacy: unverschlüsselt
+    }
+    $raw = base64_decode(substr($stored, 4), true);
+    if ($raw === false || strlen($raw) < SODIUM_CRYPTO_SECRETBOX_NONCEBYTES) {
+        return null;
+    }
+    $nonce  = substr($raw, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+    $cipher = substr($raw, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+    return tl_decrypt($cipher, $nonce);
+}
+
+// Ist ein gespeichertes Secret bereits verschlüsselt?
+function tl_totp_is_encrypted(string $stored): bool
+{
+    return strncmp($stored, 'enc:', 4) === 0;
+}
 
 // ---- Base32 (RFC 4648, ohne Padding) --------------------------------
 
@@ -166,7 +201,7 @@ switch ($action) {
         $plain = tl_make_recovery_codes();
         $hashes = array_map(fn($c) => password_hash($c, PASSWORD_DEFAULT), $plain);
         $st = db()->prepare('UPDATE users SET totp_secret = ?, totp_recovery_json = ? WHERE id = ?');
-        $st->execute([$secret, json_encode($hashes), $uid]);
+        $st->execute([tl_totp_pack($secret), json_encode($hashes), $uid]); // verschlüsselt ablegen
         unset($_SESSION['totp_setup_secret']);
         // Klartext-Codes gibt es nur JETZT, einmalig.
         json_out(['ok' => true, 'recoveryCodes' => $plain]);

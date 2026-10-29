@@ -210,7 +210,8 @@ function totp_login(array $input): void
     }
 
     $code = trim((string) ($input['code'] ?? ''));
-    $okTotp = tl_totp_verify((string) $user['totp_secret'], $code);
+    $secret = tl_totp_unpack((string) $user['totp_secret']); // entschlüsseln (Legacy: Klartext)
+    $okTotp = $secret !== null && tl_totp_verify($secret, $code);
     $okRecovery = false;
     if (!$okTotp) {
         // Recovery-Code? (Format XXXX-XXXX; wird bei Erfolg verbraucht)
@@ -228,6 +229,13 @@ function totp_login(array $input): void
     }
 
     tl_rate_clear($rlKey);
+
+    // Alt-Secret (noch Klartext) bei dieser Gelegenheit verschlüsselt nachziehen
+    if ($okTotp && $secret !== null && !tl_totp_is_encrypted((string) $user['totp_secret'])) {
+        db()->prepare('UPDATE users SET totp_secret = ? WHERE id = ?')
+            ->execute([tl_totp_pack($secret), $uid]);
+    }
+
     unset($_SESSION['2fa_pending_uid']);
     login_user($uid);
     json_out(['ok' => true, 'user' => ['id' => $uid, 'email' => $user['email']],

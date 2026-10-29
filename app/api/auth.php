@@ -41,8 +41,41 @@ switch ($action) {
         logout_user();
         json_out(['ok' => true]);
         break;
+    case 'changepassword':
+        require_csrf($input);
+        change_password($input);
+        break;
     default:
         json_error('Unbekannte Aktion.', 400);
+}
+
+// Passwort selbst ändern (angemeldet): aktuelles Passwort muss stimmen.
+function change_password(array $input): void
+{
+    $uid = require_login();
+    $cur = (string) ($input['current'] ?? '');
+    $new = (string) ($input['new'] ?? '');
+
+    if (strlen($new) < 8) {
+        json_error('Das neue Passwort muss mindestens 8 Zeichen lang sein.');
+    }
+
+    // Bremse gegen Durchprobieren des aktuellen Passworts (gekaperte Session)
+    $rlKey = 'changepw:uid:' . $uid;
+    tl_rate_guard($rlKey);
+
+    $st = db()->prepare('SELECT password_hash FROM users WHERE id = ?');
+    $st->execute([$uid]);
+    $hash = (string) $st->fetchColumn();
+    if (!password_verify($cur, $hash)) {
+        tl_rate_fail($rlKey, 5);
+        json_error('Das aktuelle Passwort ist falsch.', 401);
+    }
+    tl_rate_clear($rlKey);
+
+    db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+        ->execute([password_hash($new, PASSWORD_DEFAULT), $uid]);
+    json_out(['ok' => true]);
 }
 
 function register(array $input): void

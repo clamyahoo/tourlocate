@@ -85,6 +85,21 @@ $csrf = csrf_token();
   <div class="msg" id="msg"></div>
 
   <h1 style="margin-top:34px;font-size:18px">Sicherheit</h1>
+
+  <div class="card" style="display:block;margin-bottom:10px">
+    <div class="title">Passwort ändern</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;max-width:360px">
+      <input id="pwCurrent" type="password" autocomplete="current-password" placeholder="Aktuelles Passwort"
+             style="padding:9px;border:1px solid #cbd2d9;border-radius:7px;font:inherit">
+      <input id="pwNew" type="password" autocomplete="new-password" placeholder="Neues Passwort (mind. 8 Zeichen)"
+             style="padding:9px;border:1px solid #cbd2d9;border-radius:7px;font:inherit">
+      <input id="pwNew2" type="password" autocomplete="new-password" placeholder="Neues Passwort wiederholen"
+             style="padding:9px;border:1px solid #cbd2d9;border-radius:7px;font:inherit">
+      <div><button class="primary" id="pwSaveBtn">Passwort ändern</button></div>
+      <div id="pwMsg" style="font-size:13px;min-height:1em"></div>
+    </div>
+  </div>
+
   <div class="card" style="display:block" id="twofaCard">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
       <div class="meta">
@@ -273,6 +288,32 @@ disableBtn.onclick = async () => {
 };
 
 loadTwofa();
+
+// ==================== Passwort ändern ====================
+document.getElementById('pwSaveBtn').onclick = async () => {
+  const m = document.getElementById('pwMsg');
+  m.style.color = '#c0392b'; m.textContent = '';
+  const cur = document.getElementById('pwCurrent').value;
+  const nw  = document.getElementById('pwNew').value;
+  const nw2 = document.getElementById('pwNew2').value;
+  if (nw.length < 8) { m.textContent = 'Das neue Passwort muss mindestens 8 Zeichen lang sein.'; return; }
+  if (nw !== nw2)    { m.textContent = 'Die beiden neuen Passwörter stimmen nicht überein.'; return; }
+  const res = await fetch('api/auth.php?action=changepassword', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+    body: JSON.stringify({ current: cur, new: nw, csrf: CSRF })
+  });
+  const d = await res.json().catch(() => ({}));
+  if (d.ok) {
+    m.style.color = '#1e7d34';
+    m.textContent = 'Passwort geändert ✓';
+    document.getElementById('pwCurrent').value = '';
+    document.getElementById('pwNew').value = '';
+    document.getElementById('pwNew2').value = '';
+  } else {
+    m.textContent = d.error || 'Fehler.';
+  }
+};
 </script>
 </body>
 </html>

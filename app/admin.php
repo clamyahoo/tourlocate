@@ -161,6 +161,7 @@ async function loadUsers() {
       <td>${u.blocked?'gesperrt':'aktiv'}</td>
       <td>
         <button data-act="pres">Inhalte</button>
+        <button data-act="setpw">Passwort</button>
         ${u.is_admin?'':`<button data-act="block">${u.blocked?'Entsperren':'Sperren'}</button>
         <button class="danger" data-act="del">Löschen</button>`}
       </td>
@@ -170,7 +171,7 @@ async function loadUsers() {
 document.querySelector('#usersTable tbody').addEventListener('click', async e => {
   const btn = e.target.closest('button'); if (!btn) return;
   const tr = e.target.closest('tr'); const id = Number(tr.dataset.id); const email = tr.dataset.email;
-  msg.textContent = '';
+  msg.textContent = ''; msg.style.color = '#c0392b';
   if (btn.dataset.act === 'pres') {
     const d = await api('presentations', null, '&user_id='+id);
     if (!d.ok) { msg.textContent = d.error||'Fehler.'; return; }
@@ -186,6 +187,13 @@ document.querySelector('#usersTable tbody').addEventListener('click', async e =>
             <button class="danger" data-act="delpres">Löschen</button></td>
       </tr>`).join('') || '<tr><td colspan="6">Keine Präsentationen.</td></tr>';
     document.getElementById('presPanel').scrollIntoView({behavior:'smooth'});
+  } else if (btn.dataset.act === 'setpw') {
+    const pw = prompt('Neues Passwort für ' + email + ' (mind. 8 Zeichen):');
+    if (pw === null) return;
+    if (pw.length < 8) { msg.textContent = 'Das Passwort muss mindestens 8 Zeichen lang sein.'; return; }
+    const d = await api('setpassword', { user_id: id, password: pw });
+    if (d.ok) { msg.style.color = '#1e7d34'; msg.textContent = 'Passwort für ' + email + ' gesetzt ✓'; loadAudit(); }
+    else { msg.style.color = '#c0392b'; msg.textContent = d.error || 'Fehler.'; }
   } else if (btn.dataset.act === 'block') {
     const blocked = btn.textContent === 'Sperren' ? 1 : 0;
     if (!confirm((blocked?'Sperren':'Entsperren')+': '+email+'?')) return;

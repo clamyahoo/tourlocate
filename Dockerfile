@@ -28,6 +28,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # (serverweit, unabhängig von AllowOverride — siehe Datei-Kommentar)
 COPY docker/apache-tourlocate.conf /etc/apache2/conf-enabled/tourlocate.conf
 
+# PHP-Härtung: Shell-/Prozess-Funktionen abschalten (die App braucht sie
+# nicht) + PHP-Version verbergen — siehe Datei-Kommentar.
+COPY docker/php-hardening.ini /usr/local/etc/php/conf.d/zz-tourlocate-hardening.ini
+
 # Repo-Inhalt (ohne app/data, app/api/config.php — siehe .dockerignore)
 COPY . /var/www/html/
 

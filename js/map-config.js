@@ -69,5 +69,6 @@ export const IMG_QUALITIES = {
 // Geteiltes Geheimnis mit webdav-proxy.php (bremst automatisierte
 // Scanner; kein Ersatz für echte Zugriffskontrolle, da der Wert im
 // öffentlichen JS-Quelltext steht). Bei Änderung IMMER auch in
-// webdav-proxy.php (Konstante PROXY_KEY) anpassen.
+// webdav-proxy.php (Konstante PROXY_KEY) anpassen. Im Docker-Betrieb
+// setzt der Entrypoint beide Stellen aus TOURLOCATE_PROXY_KEY.
 export const PROXY_KEY = 'tourlocate-webdav-2026-BITTE-AENDERN';

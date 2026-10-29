@@ -213,6 +213,26 @@ switch ($action) {
         json_out(['ok' => true, 'id' => $newUid, 'email' => $email]);
         break;
 
+    case 'setpassword':
+        // Admin setzt ein neues Passwort für ein Konto (z. B. Reset nach
+        // Verlust). Auditiert; kein aktuelles Passwort nötig.
+        $tuid = (int) ($input['user_id'] ?? 0);
+        $new  = (string) ($input['password'] ?? '');
+        if (strlen($new) < 8) {
+            json_error('Das Passwort muss mindestens 8 Zeichen lang sein.');
+        }
+        $st = db()->prepare('SELECT email FROM users WHERE id = ?');
+        $st->execute([$tuid]);
+        $email = $st->fetchColumn();
+        if ($email === false) {
+            json_error('Konto nicht gefunden.', 404);
+        }
+        db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+            ->execute([password_hash($new, PASSWORD_DEFAULT), $tuid]);
+        tl_audit($aid, 'set_password', $tuid, null, (string) $email);
+        json_out(['ok' => true]);
+        break;
+
     case 'closereport':
         $rid = (int) ($input['id'] ?? 0);
         $st = db()->prepare('SELECT presentation_id FROM reports WHERE id = ?');

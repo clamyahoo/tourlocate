@@ -23,6 +23,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && docker-php-ext-install -j"$(nproc)" pdo_sqlite gd exif curl sodium \
     && a2enmod rewrite
 
+# Apache-Härtung: Datenverzeichnis sperren + Verzeichnislisting aus
+# (serverweit, unabhängig von AllowOverride — siehe Datei-Kommentar)
+COPY docker/apache-tourlocate.conf /etc/apache2/conf-enabled/tourlocate.conf
+
 # Repo-Inhalt (ohne app/data, app/api/config.php — siehe .dockerignore)
 COPY . /var/www/html/
 

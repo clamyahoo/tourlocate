@@ -46,6 +46,17 @@ function tl_apply_orientation($img, int $orientation)
 // (nicht dekodierbar).
 function tl_normalize_jpeg(string $jpeg, int $targetBytes = 204800, int $hardMaxSide = 1600): ?string
 {
+    // Dekompressionsbomben abwehren: Ein winziges JPEG kann riesige
+    // Pixelmaße deklarieren; imagecreatefromstring würde dann GB an
+    // Speicher belegen. Darum VOR dem Dekodieren die Maße prüfen.
+    $info = @getimagesizefromstring($jpeg);
+    if ($info === false) {
+        return null; // kein erkennbares Bild
+    }
+    if (($info[0] * $info[1]) > 50_000_000) { // > 50 Megapixel → ablehnen
+        return null;
+    }
+
     $orientation = tl_jpeg_orientation($jpeg);
     $src = @imagecreatefromstring($jpeg); // GD liest keine EXIF → Metadaten sind damit weg
     if ($src === false) {

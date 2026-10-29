@@ -156,6 +156,8 @@ $json = str_replace('<', '\\u003c', $json); // nie </script> in der Payload
 (function(){
   var D = JSON.parse(document.getElementById('tl-data').textContent);
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  // Nutzer-Link entschärfen: javascript:/data: usw. als href blockieren
+  function safeUrl(u){ u=String(u==null?'':u).replace(/[\u0000-\u001F]/g,'').trim(); if(!u) return ''; if(/^(https?:|mailto:|tel:)/i.test(u)) return u; if(/^[a-z][a-z0-9+.-]*:/i.test(u)) return ''; return u; }
 
   var map = L.map('map').setView([0,0],2);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -181,7 +183,8 @@ $json = str_replace('<', '\\u003c', $json); // nie </script> in der Payload
     var title=(i+1)+'. '+(p.name||'Station');
     var dateHtml='';
     if (p.createdAt){ var d=new Date(p.createdAt); if(!isNaN(d)) dateHtml='<div class="tl-date">'+esc(d.toLocaleString('de-DE'))+'</div>'; }
-    var linkHtml=p.link?'<div><a href="'+esc(p.link)+'" target="_blank" rel="noopener">'+esc(p.linkText||'Link')+'</a></div>':'';
+    var _lu=safeUrl(p.link);
+    var linkHtml=_lu?'<div><a href="'+esc(_lu)+'" target="_blank" rel="noopener">'+esc(p.linkText||'Link')+'</a></div>':'';
     var imgHtml=p.img?'<div><button type="button" class="thumb" data-img="'+esc(p.img)+'"><span class="tl-thumb"><img src="'+esc(p.img)+'" alt=""></span></button></div>':'';
     m.bindPopup('<div class="tl-card"><strong>'+esc(title)+'</strong>'+dateHtml+linkHtml+imgHtml+'</div>');
   });

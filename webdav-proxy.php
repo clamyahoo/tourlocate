@@ -41,9 +41,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     proxy_fail(405, 'Nur POST erlaubt.');
 }
 
-$ownHost = $_SERVER['HTTP_HOST'] ?? '';
-$origin = $_SERVER['HTTP_ORIGIN'] ?? ($_SERVER['HTTP_REFERER'] ?? '');
-if ($ownHost === '' || $origin === '' || strpos($origin, $ownHost) === false) {
+// Herkunft prüfen: der HOST der Origin/Referer-URL muss exakt dem eigenen
+// Host entsprechen (frühere Teilstring-Prüfung ließ z. B.
+// "tourlocate.example.de.angreifer.tld" durchrutschen).
+// '//' voranstellen, damit parse_url auch "host:port" als Host liest
+// (und IPv6-Klammern korrekt behandelt); Port wird so verworfen.
+$ownHost = strtolower((string) (parse_url('//' . ($_SERVER['HTTP_HOST'] ?? ''), PHP_URL_HOST) ?? ''));
+$originRaw = $_SERVER['HTTP_ORIGIN'] ?? ($_SERVER['HTTP_REFERER'] ?? '');
+$originHost = strtolower((string) (parse_url((string) $originRaw, PHP_URL_HOST) ?? ''));
+if ($ownHost === '' || $originHost === '' || $originHost !== $ownHost) {
     proxy_fail(403, 'Ungültige Herkunft.');
 }
 
@@ -69,18 +75,54 @@ $parts = parse_url($targetUrl);
 if ($parts === false || ($parts['scheme'] ?? '') !== 'https' || empty($parts['host'])) {
     proxy_fail(400, 'Nur https-URLs erlaubt.');
 }
-
 $host = $parts['host'];
-$ip = gethostbyname($host); // liefert bei Fehlschlag den Hostnamen unverändert zurück
-if ($ip === $host && !filter_var($host, FILTER_VALIDATE_IP)) {
+$port = (int) ($parts['port'] ?? 443);
+
+// Eine IP (v4/v6) auf öffentlich prüfen. NO_PRIV_RANGE|NO_RES_RANGE deckt
+// v4 UND v6 ab (Loopback, Link-Local, ULA fc00::/7, ::1 …); zusätzlich
+// explizit die Cloud-Metadaten-Adresse.
+$ip_allowed = function (string $ip): bool {
+    if ($ip === '169.254.169.254') {
+        return false;
+    }
+    return filter_var($ip, FILTER_VALIDATE_IP,
+        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
+};
+
+// Host zu ALLEN IPs auflösen (A + AAAA) — nicht nur die erste IPv4, sonst
+// ließe sich der Schutz per IPv6 oder Mehrfach-A-Records umgehen.
+if (filter_var($host, FILTER_VALIDATE_IP)) {
+    $ips = [$host];
+} else {
+    $ips = [];
+    $v4 = @gethostbynamel($host);
+    if (is_array($v4)) {
+        $ips = $v4;
+    }
+    if (function_exists('dns_get_record')) {
+        $aaaa = @dns_get_record($host, DNS_AAAA);
+        if (is_array($aaaa)) {
+            foreach ($aaaa as $rec) {
+                if (!empty($rec['ipv6'])) {
+                    $ips[] = $rec['ipv6'];
+                }
+            }
+        }
+    }
+    $ips = array_values(array_unique($ips));
+}
+if (!$ips) {
     proxy_fail(400, 'Ziel-Host konnte nicht aufgelöst werden.');
 }
-// Blockt private (10/8, 172.16/12, 192.168/16, ...) und reservierte
-// Bereiche (Loopback 127/8, Link-Local 169.254/16 inkl. Cloud-Metadaten-
-// Adresse 169.254.169.254, ...) in einem Aufwasch.
-if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-    proxy_fail(400, 'Ziel-Adresse ist nicht erlaubt (privates/internes Netz).');
+// Konservativ: schon EINE interne IP im Ergebnis → ablehnen.
+foreach ($ips as $checkIp) {
+    if (!$ip_allowed($checkIp)) {
+        proxy_fail(400, 'Ziel-Adresse ist nicht erlaubt (privates/internes Netz).');
+    }
 }
+// Verbindung an die geprüfte IP binden (DNS-Rebinding-Schutz: curl löst
+// nicht erneut auf).
+$pinnedResolve = $host . ':' . $port . ':' . $ips[0];
 
 // --- Anfrage an die WebDAV-Gegenstelle bauen ---
 $headers = [];
@@ -97,6 +139,7 @@ curl_setopt_array($ch, [
     CURLOPT_FOLLOWLOCATION => false,  // Umleitungen könnten den SSRF-Schutz umgehen
     CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
     CURLOPT_SSL_VERIFYPEER => true,
+    CURLOPT_RESOLVE => [$pinnedResolve], // an die geprüfte IP binden
 ]);
 
 if ($action === 'list') {

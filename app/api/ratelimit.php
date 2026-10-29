@@ -69,8 +69,32 @@ function tl_rate_guard(string $key): void
     }
 }
 
-// Client-IP (hinter Proxy ggf. anpassen; bewusst konservativ REMOTE_ADDR)
+// Client-IP ermitteln.
+//
+// Im Docker-Betrieb läuft der Container hinter dem Host-Apache als
+// Reverse-Proxy — REMOTE_ADDR ist dann für ALLE Anfragen die (lokale)
+// Proxy-IP, wodurch die IP-basierten Bremsen (Login/Registrierung/Melden)
+// alle Clients in einen Topf werfen würden. Ist REMOTE_ADDR eine
+// lokale/private Adresse (= unser eigener Proxy, vertrauenswürdig),
+// nehmen wir die vom Proxy angehängte echte Client-IP aus
+// X-Forwarded-For (das LETZTE Glied — mod_proxy hängt die reale IP
+// rechts an; frühere Glieder kann der Client fälschen).
 function tl_client_ip(): string
 {
-    return (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+    $remote = (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+
+    $isLocalProxy = filter_var(
+        $remote,
+        FILTER_VALIDATE_IP,
+        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+    ) === false; // schlägt fehl ⇒ private/reservierte (also lokale) Adresse
+
+    if ($isLocalProxy && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $parts = array_map('trim', explode(',', (string) $_SERVER['HTTP_X_FORWARDED_FOR']));
+        $candidate = end($parts); // rechtestes Glied = vom vertrauten Proxy gesetzt
+        if (filter_var($candidate, FILTER_VALIDATE_IP) !== false) {
+            return $candidate;
+        }
+    }
+    return $remote;
 }

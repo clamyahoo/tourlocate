@@ -10,32 +10,91 @@ declare(strict_types=1);
 const TL_DAV_MAX_BYTES = 30 * 1024 * 1024;
 const TL_DAV_TIMEOUT   = 20;
 
-// Prüft die Ziel-URL (https, auflösbar, kein privates Netz).
-// Rückgabe: null wenn ok, sonst Fehlertext.
-function tl_dav_check_url(string $url): ?string
+// Eine einzelne IP (v4 oder v6) auf öffentlich/erlaubt prüfen.
+// FILTER_FLAG_NO_PRIV_RANGE|NO_RES_RANGE deckt v4 UND v6 ab (Loopback,
+// Link-Local inkl. 169.254.169.254, ULA fc00::/7, ::1 …); zusätzlich
+// explizit die IPv4-Cloud-Metadaten-Adresse als Gürtel-und-Hosenträger.
+function tl_dav_ip_allowed(string $ip): bool
+{
+    if ($ip === '169.254.169.254') {
+        return false;
+    }
+    return filter_var(
+        $ip,
+        FILTER_VALIDATE_IP,
+        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+    ) !== false;
+}
+
+// Host zu ALLEN IPs auflösen (A + AAAA). Rückgabe: Liste oder [] .
+function tl_dav_resolve_all(string $host): array
+{
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+        return [$host]; // schon eine IP
+    }
+    $ips = [];
+    $v4 = @gethostbynamel($host);
+    if (is_array($v4)) {
+        $ips = $v4;
+    }
+    if (function_exists('dns_get_record')) {
+        $aaaa = @dns_get_record($host, DNS_AAAA);
+        if (is_array($aaaa)) {
+            foreach ($aaaa as $rec) {
+                if (!empty($rec['ipv6'])) {
+                    $ips[] = $rec['ipv6'];
+                }
+            }
+        }
+    }
+    return array_values(array_unique($ips));
+}
+
+// Ziel-URL prüfen und die Verbindung an eine geprüfte IP binden
+// (SSRF-Schutz inkl. DNS-Rebinding: aufgelöst wird EINMAL, curl bekommt
+// per CURLOPT_RESOLVE genau diese IP und löst nicht erneut auf).
+// Rückgabe: ['error'=>?string, 'resolve'=>?string] — resolve ist der
+// "host:port:ip"-Eintrag für CURLOPT_RESOLVE (null bei Fehler).
+function tl_dav_validate(string $url): array
 {
     $parts = parse_url($url);
     if ($parts === false || ($parts['scheme'] ?? '') !== 'https' || empty($parts['host'])) {
-        return 'Nur https-URLs erlaubt.';
+        return ['error' => 'Nur https-URLs erlaubt.', 'resolve' => null];
     }
     $host = $parts['host'];
-    $ip = gethostbyname($host);
-    if ($ip === $host && !filter_var($host, FILTER_VALIDATE_IP)) {
-        return 'Ziel-Host konnte nicht aufgelöst werden.';
+    $port = (int) ($parts['port'] ?? 443);
+
+    $ips = tl_dav_resolve_all($host);
+    if (!$ips) {
+        return ['error' => 'Ziel-Host konnte nicht aufgelöst werden.', 'resolve' => null];
     }
-    if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-        return 'Ziel-Adresse ist nicht erlaubt (privates/internes Netz).';
+    // Konservativ: ist AUCH NUR EINE aufgelöste IP intern, wird abgelehnt
+    // (verhindert, dass ein Host public+private mischt, um intern zu zielen).
+    foreach ($ips as $ip) {
+        if (!tl_dav_ip_allowed($ip)) {
+            return ['error' => 'Ziel-Adresse ist nicht erlaubt (privates/internes Netz).', 'resolve' => null];
+        }
     }
-    return null;
+    // Erste geprüfte IP festnageln; eckige Klammern für IPv6 in RESOLVE
+    // sind NICHT nötig (curl erwartet dort die nackte IP).
+    return ['error' => null, 'resolve' => $host . ':' . $port . ':' . $ips[0]];
+}
+
+// Prüft die Ziel-URL (https, auflösbar, kein privates Netz).
+// Rückgabe: null wenn ok, sonst Fehlertext. (Dünner Wrapper für
+// Aufrufer, die nur validieren, aber nicht selbst verbinden.)
+function tl_dav_check_url(string $url): ?string
+{
+    return tl_dav_validate($url)['error'];
 }
 
 // Führt PROPFIND (action=list) oder GET (action=get) aus.
 // Rückgabe: ['ok'=>true,'status'=>int,'body'=>string] oder ['ok'=>false,'error'=>string]
 function tl_dav_request(string $action, string $url, string $user, string $pass): array
 {
-    $err = tl_dav_check_url($url);
-    if ($err !== null) {
-        return ['ok' => false, 'error' => $err];
+    $check = tl_dav_validate($url);
+    if ($check['error'] !== null) {
+        return ['ok' => false, 'error' => $check['error']];
     }
 
     $headers = [];
@@ -51,6 +110,9 @@ function tl_dav_request(string $action, string $url, string $user, string $pass)
         CURLOPT_FOLLOWLOCATION => false, // Umleitungen könnten den SSRF-Schutz umgehen
         CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
         CURLOPT_SSL_VERIFYPEER => true,
+        // An die geprüfte IP binden → curl löst nicht erneut auf
+        // (DNS-Rebinding-Schutz).
+        CURLOPT_RESOLVE        => [$check['resolve']],
     ]);
     if ($action === 'list') {
         $headers[] = 'Depth: 1';

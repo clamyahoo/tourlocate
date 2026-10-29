@@ -196,8 +196,8 @@ switch ($action) {
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             json_error('Bitte eine gültige E-Mail-Adresse angeben.');
         }
-        if (strlen($pass) < 8) {
-            json_error('Das Passwort muss mindestens 8 Zeichen lang sein.');
+        if ($problem = tl_password_problem($pass, $email)) {
+            json_error($problem);
         }
         try {
             db()->prepare('INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)')
@@ -218,14 +218,14 @@ switch ($action) {
         // Verlust). Auditiert; kein aktuelles Passwort nötig.
         $tuid = (int) ($input['user_id'] ?? 0);
         $new  = (string) ($input['password'] ?? '');
-        if (strlen($new) < 8) {
-            json_error('Das Passwort muss mindestens 8 Zeichen lang sein.');
-        }
         $st = db()->prepare('SELECT email FROM users WHERE id = ?');
         $st->execute([$tuid]);
         $email = $st->fetchColumn();
         if ($email === false) {
             json_error('Konto nicht gefunden.', 404);
+        }
+        if ($problem = tl_password_problem($new, (string) $email)) {
+            json_error($problem);
         }
         db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
             ->execute([password_hash($new, PASSWORD_DEFAULT), $tuid]);

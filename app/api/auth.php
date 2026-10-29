@@ -56,17 +56,18 @@ function change_password(array $input): void
     $cur = (string) ($input['current'] ?? '');
     $new = (string) ($input['new'] ?? '');
 
-    if (strlen($new) < 8) {
-        json_error('Das neue Passwort muss mindestens 8 Zeichen lang sein.');
-    }
-
     // Bremse gegen Durchprobieren des aktuellen Passworts (gekaperte Session)
     $rlKey = 'changepw:uid:' . $uid;
     tl_rate_guard($rlKey);
 
-    $st = db()->prepare('SELECT password_hash FROM users WHERE id = ?');
+    $st = db()->prepare('SELECT email, password_hash FROM users WHERE id = ?');
     $st->execute([$uid]);
-    $hash = (string) $st->fetchColumn();
+    $row = $st->fetch();
+    $hash = (string) ($row['password_hash'] ?? '');
+
+    if ($problem = tl_password_problem($new, (string) ($row['email'] ?? ''))) {
+        json_error($problem);
+    }
     if (!password_verify($cur, $hash)) {
         tl_rate_fail($rlKey, 5);
         json_error('Das aktuelle Passwort ist falsch.', 401);
@@ -110,8 +111,8 @@ function register(array $input): void
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         json_error('Bitte eine gültige E-Mail-Adresse angeben.');
     }
-    if (strlen($pass) < 8) {
-        json_error('Das Passwort muss mindestens 8 Zeichen lang sein.');
+    if ($problem = tl_password_problem($pass, $email)) {
+        json_error($problem);
     }
 
     $hash = password_hash($pass, PASSWORD_DEFAULT);

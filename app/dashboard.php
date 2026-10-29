@@ -91,7 +91,7 @@ $csrf = csrf_token();
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;max-width:360px">
       <input id="pwCurrent" type="password" autocomplete="current-password" placeholder="Aktuelles Passwort"
              style="padding:9px;border:1px solid #cbd2d9;border-radius:7px;font:inherit">
-      <input id="pwNew" type="password" autocomplete="new-password" placeholder="Neues Passwort (mind. 8 Zeichen)"
+      <input id="pwNew" type="password" autocomplete="new-password" placeholder="Neues Passwort (mind. 12 Zeichen)"
              style="padding:9px;border:1px solid #cbd2d9;border-radius:7px;font:inherit">
       <input id="pwNew2" type="password" autocomplete="new-password" placeholder="Neues Passwort wiederholen"
              style="padding:9px;border:1px solid #cbd2d9;border-radius:7px;font:inherit">
@@ -296,7 +296,7 @@ document.getElementById('pwSaveBtn').onclick = async () => {
   const cur = document.getElementById('pwCurrent').value;
   const nw  = document.getElementById('pwNew').value;
   const nw2 = document.getElementById('pwNew2').value;
-  if (nw.length < 8) { m.textContent = 'Das neue Passwort muss mindestens 8 Zeichen lang sein.'; return; }
+  if (nw.length < 12) { m.textContent = 'Das neue Passwort muss mindestens 12 Zeichen lang sein.'; return; }
   if (nw !== nw2)    { m.textContent = 'Die beiden neuen Passwörter stimmen nicht überein.'; return; }
   const res = await fetch('api/auth.php?action=changepassword', {
     method: 'POST',

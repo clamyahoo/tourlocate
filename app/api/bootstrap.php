@@ -175,6 +175,54 @@ function tl_registration_mode(): string
     return in_array($m, ['open', 'invite', 'closed'], true) ? $m : 'open';
 }
 
+// ---- Passwort-Richtlinie --------------------------------------------
+//
+// Moderne Linie (NIST 800-63B): Länge zählt, nicht erzwungene Zeichen-
+// klassen. ALLE Zeichen sind erlaubt (Buchstaben, Ziffern, Leerzeichen,
+// Satzzeichen, Umlaute, Emoji …) — bewusst KEINE Vorschrift "muss Groß-
+// buchstabe/Ziffer/Sonderzeichen enthalten", die nur zu schwachen Mustern
+// und Frust führt. Zusätzlich werden offensichtlich schwache Passwörter
+// abgewiesen. Rückgabe: null wenn ok, sonst ein Fehlertext.
+function tl_password_problem(string $pw, string $email = ''): ?string
+{
+    $len = strlen($pw); // Byte-Länge genügt (Unicode erhöht sie nur)
+    if ($len < 12) {
+        return 'Das Passwort muss mindestens 12 Zeichen lang sein.';
+    }
+    if ($len > 128) {
+        return 'Das Passwort darf höchstens 128 Zeichen lang sein.';
+    }
+
+    $lower = strtolower($pw);
+
+    // Häufige / triviale Passwörter (kleine, kuratierte Sperrliste)
+    $common = [
+        'passwort', 'password', 'passwort123', 'password123',
+        '123456789', '1234567890', '12345678', '123456789012',
+        'qwertz', 'qwerty', 'qwertzuiop', 'qwertyuiop', 'asdfghjkl',
+        'letmein', 'willkommen', 'willkommen1', 'tourlocate',
+        'iloveyou', 'admin123', 'administrator', 'geheim123',
+    ];
+    if (in_array($lower, $common, true)) {
+        return 'Dieses Passwort ist zu gebräuchlich — bitte ein anderes wählen.';
+    }
+
+    // Nur ein einziges wiederholtes Zeichen (z. B. "aaaaaaaaaaaa")
+    if (preg_match('/^(.)\1+$/u', $pw)) {
+        return 'Bitte kein Passwort aus nur einem wiederholten Zeichen.';
+    }
+
+    // Nicht die E-Mail-Adresse bzw. deren lokaler Teil als Passwort
+    if ($email !== '') {
+        $local = strtolower(explode('@', $email)[0]);
+        if (strlen($local) >= 4 && str_contains($lower, $local)) {
+            return 'Das Passwort darf nicht die E-Mail-Adresse enthalten.';
+        }
+    }
+
+    return null;
+}
+
 // UTF-8-sichere Kürzung auf max. $max Zeichen — nutzt mbstring, wenn
 // vorhanden, sonst PCRE-Fallback (kein mbstring als Pflicht-Abhängigkeit).
 function tl_str_limit(string $s, int $max): string

@@ -88,7 +88,7 @@ $csrf = csrf_token();
       <strong style="font-size:14px">Konto manuell anlegen</strong>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px">
         <input id="newUserEmail" type="email" placeholder="E-Mail" style="flex:1;min-width:160px;padding:7px 8px;border:1px solid #cbd2d9;border-radius:6px;font:inherit">
-        <input id="newUserPass" type="text" placeholder="Passwort (min. 8)" style="flex:1;min-width:140px;padding:7px 8px;border:1px solid #cbd2d9;border-radius:6px;font:inherit">
+        <input id="newUserPass" type="text" placeholder="Passwort (min. 12)" style="flex:1;min-width:140px;padding:7px 8px;border:1px solid #cbd2d9;border-radius:6px;font:inherit">
         <button id="createUserBtn">Anlegen</button>
       </div>
       <div id="createUserMsg" style="font-size:13px;min-height:1em;margin-top:6px"></div>
@@ -188,9 +188,9 @@ document.querySelector('#usersTable tbody').addEventListener('click', async e =>
       </tr>`).join('') || '<tr><td colspan="6">Keine Präsentationen.</td></tr>';
     document.getElementById('presPanel').scrollIntoView({behavior:'smooth'});
   } else if (btn.dataset.act === 'setpw') {
-    const pw = prompt('Neues Passwort für ' + email + ' (mind. 8 Zeichen):');
+    const pw = prompt('Neues Passwort für ' + email + ' (mind. 12 Zeichen):');
     if (pw === null) return;
-    if (pw.length < 8) { msg.textContent = 'Das Passwort muss mindestens 8 Zeichen lang sein.'; return; }
+    if (pw.length < 12) { msg.textContent = 'Das Passwort muss mindestens 12 Zeichen lang sein.'; return; }
     const d = await api('setpassword', { user_id: id, password: pw });
     if (d.ok) { msg.style.color = '#1e7d34'; msg.textContent = 'Passwort für ' + email + ' gesetzt ✓'; loadAudit(); }
     else { msg.style.color = '#c0392b'; msg.textContent = d.error || 'Fehler.'; }

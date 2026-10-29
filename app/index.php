@@ -101,11 +101,17 @@ function setMode(m) {
     submitBtn.textContent = 'Anmelden';
     switchLine.innerHTML = 'Noch kein Konto? <a id="switchLink">Registrieren</a>';
     pwInput.autocomplete = 'current-password';
+    // Login: Bestandskonten (8–11 Zeichen) nicht aussperren
+    pwInput.minLength = 8;
+    pwInput.placeholder = '';
   } else {
     title.textContent = 'Konto erstellen';
     submitBtn.textContent = 'Registrieren';
     switchLine.innerHTML = 'Schon ein Konto? <a id="switchLink">Anmelden</a>';
     pwInput.autocomplete = 'new-password';
+    // Registrierung: neue Passwörter mind. 12 Zeichen
+    pwInput.minLength = 12;
+    pwInput.placeholder = 'mind. 12 Zeichen';
   }
   const sl = document.getElementById('switchLink');
   if (sl) sl.onclick = () => setMode(m === 'login' ? 'register' : 'login');

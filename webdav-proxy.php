@@ -22,7 +22,9 @@
  */
 
 // Muss mit PROXY_KEY in js/map-config.js übereinstimmen — bei Änderung
-// immer BEIDE Stellen anpassen.
+// immer BEIDE Stellen anpassen. Im Docker-Betrieb setzt der Entrypoint
+// hier UND in map-config.js den Wert aus TOURLOCATE_PROXY_KEY (falls
+// gesetzt). Kein echtes Secret (steht im ausgelieferten JS).
 define('PROXY_KEY', 'tourlocate-webdav-2026-BITTE-AENDERN');
 
 define('MAX_BYTES', 30 * 1024 * 1024); // 30 MB Obergrenze pro Antwort

@@ -30,6 +30,20 @@ fi
 
 chown -R www-data:www-data "$DATA_DIR"
 
+# WebDAV-Proxy-Schlüssel pro Deployment setzen (nur statische App unter /).
+# KEIN echtes Secret — er steht im ausgelieferten JS; aber so nutzt jede
+# Installation einen eigenen Wert statt des Standard-Platzhalters, was
+# generische Scanner abblockt. Wert in BEIDEN Dateien gleich setzen
+# (PHP-Proxy + map-config.js), damit sie zusammenpassen.
+# Nur [A-Za-z0-9._-] verwenden (sonst bricht die sed-Ersetzung).
+if [ -n "${TOURLOCATE_PROXY_KEY:-}" ]; then
+    echo "[entrypoint] Setze WebDAV-Proxy-Schlüssel aus TOURLOCATE_PROXY_KEY…"
+    sed -i "s|define('PROXY_KEY', '[^']*');|define('PROXY_KEY', '${TOURLOCATE_PROXY_KEY}');|" \
+        "$APP_ROOT/webdav-proxy.php"
+    sed -i "s|export const PROXY_KEY = '[^']*';|export const PROXY_KEY = '${TOURLOCATE_PROXY_KEY}';|" \
+        "$APP_ROOT/js/map-config.js"
+fi
+
 # Cron als Daemon starten (forkt selbst, blockiert nicht)
 cron
 

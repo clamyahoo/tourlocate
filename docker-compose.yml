@@ -18,6 +18,11 @@ services:
       # Auf false setzen, wenn (noch) kein HTTPS vor dem Container läuft
       # — sonst wird der Session-Cookie vom Browser verworfen.
       TOURLOCATE_COOKIE_SECURE: "true"
+      # Optional: eigener WebDAV-Proxy-Schlüssel für die statische App
+      # (nur [A-Za-z0-9._-]). Kein echtes Secret, aber besser als der
+      # Standardwert. Erzeugen z. B. mit:
+      #   php -r "echo bin2hex(random_bytes(16));"
+      # TOURLOCATE_PROXY_KEY: "hier-eigenen-wert-einsetzen"
     restart: unless-stopped
 
 volumes:

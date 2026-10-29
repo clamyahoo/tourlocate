@@ -51,6 +51,16 @@ $csrf = csrf_token();
   .empty{color:#667;background:#fff;border:1px dashed #cbd2d9;border-radius:10px;
          padding:28px;text-align:center}
   .msg{font-size:13px;color:#c0392b;min-height:1em;margin-top:10px}
+
+  /* Schmale Screens: Karte vertikal stapeln, damit der Titel die volle
+     Breite bekommt und die Buttons nicht hineinragen. */
+  @media (max-width: 560px){
+    .card{flex-direction:column;align-items:stretch;gap:10px}
+    .card .title{white-space:normal}      /* langer Name darf umbrechen */
+    .actions{flex-wrap:wrap}
+    .actions button{flex:1 1 auto}        /* Buttons füllen die Breite */
+    .bar{flex-wrap:wrap;gap:8px}
+  }
 </style>
 </head>
 <body>

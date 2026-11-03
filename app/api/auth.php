@@ -159,8 +159,21 @@ function login(array $input): void
     $st->execute([$email]);
     $user = $st->fetch();
 
+    // Konstante Login-Zeit gegen Konto-Enumeration: Bei unbekanntem Konto
+    // würde das Überspringen von password_verify messbar schneller
+    // antworten und so verraten, dass die Adresse NICHT existiert. Darum
+    // auch dann eine gleich teure bcrypt-Operation ausführen
+    // (password_hash kostet dasselbe wie ein verify und passt sich einem
+    // künftig höheren Default-Cost automatisch an).
+    if ($user) {
+        $passOk = password_verify($pass, (string) $user['password_hash']);
+    } else {
+        password_hash($pass, PASSWORD_DEFAULT);
+        $passOk = false;
+    }
+
     // Konstante Antwort bei falschem Nutzer/Passwort (kein User-Enumeration).
-    if (!$user || !password_verify($pass, $user['password_hash'])) {
+    if (!$user || !$passOk) {
         tl_rate_fail($mailKey, 5);
         tl_rate_fail($ipKey, 20);
         json_error('E-Mail-Adresse oder Passwort ist falsch.', 401);

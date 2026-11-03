@@ -141,6 +141,7 @@ $csrf = csrf_token();
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js" defer></script>
 <script>
 const CSRF = <?= json_encode($csrf) ?>;
+const IS_ADMIN = <?= $isAdmin ? 'true' : 'false' ?>;
 
 async function api(action, body) {
   const opts = { headers: { 'X-CSRF-Token': CSRF } };
@@ -236,6 +237,7 @@ async function totpApi(action, body) {
 }
 
 const twofaState = document.getElementById('twofaState');
+const twofaCard = document.getElementById('twofaCard');
 const enableBtn = document.getElementById('twofaEnableBtn');
 const disableBtn = document.getElementById('twofaDisableBtn');
 
@@ -245,10 +247,24 @@ async function loadTwofa() {
   if (s.enabled) {
     twofaState.textContent = 'Aktiv — beim Anmelden wird zusätzlich ein Code abgefragt. '
       + s.recoveryLeft + ' Recovery-Code(s) übrig.';
+    twofaCard.style.borderColor = '';
+    twofaCard.style.background = '';
     enableBtn.style.display = 'none';
     disableBtn.style.display = '';
   } else {
-    twofaState.textContent = 'Nicht aktiv. Empfohlen — schützt dein Konto zusätzlich zum Passwort.';
+    if (IS_ADMIN) {
+      // Admin-Konten können fremde Inhalte einsehen und Nutzer verwalten —
+      // hier nachdrücklich zur 2FA raten und die Karte hervorheben.
+      twofaState.innerHTML = '<strong style="color:#b45309">Dringend empfohlen für Admin-Konten.</strong> '
+        + 'Dein Konto kann Nutzer verwalten und fremde Inhalte einsehen — sichere es mit 2FA '
+        + 'zusätzlich zum Passwort ab.';
+      twofaCard.style.borderColor = '#f0b429';
+      twofaCard.style.background = '#fffbeb';
+    } else {
+      twofaState.textContent = 'Nicht aktiv. Empfohlen — schützt dein Konto zusätzlich zum Passwort.';
+      twofaCard.style.borderColor = '';
+      twofaCard.style.background = '';
+    }
     enableBtn.style.display = '';
     disableBtn.style.display = 'none';
   }

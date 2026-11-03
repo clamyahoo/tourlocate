@@ -99,13 +99,13 @@ function require_login(): int
     return $uid;
 }
 
-// Admin-Guard: wie require_login, zusätzlich is_admin-Pflicht.
+// Admin-Guard: wie require_login, zusätzlich is_admin-Pflicht. Die
+// eigentliche Admin-Prüfung lebt nur in is_admin_user() (eine Stelle für
+// die sicherheitskritische Logik).
 function require_admin(): int
 {
     $uid = require_login();
-    $st = db()->prepare('SELECT is_admin FROM users WHERE id = ?');
-    $st->execute([$uid]);
-    if ((int) $st->fetchColumn() !== 1) {
+    if (!is_admin_user($uid)) {
         json_error('Keine Berechtigung.', 403);
     }
     return $uid;

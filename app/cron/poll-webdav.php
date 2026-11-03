@@ -177,8 +177,8 @@ foreach ($conns as $c) {
             continue;
         }
 
-        $name = bin2hex(random_bytes(8)) . '.jpg';
-        if (file_put_contents($dir . '/' . $name, $small) === false) {
+        $name = tl_store_jpeg($dir, $small);
+        if ($name === null) {
             $fail('Bild nicht speicherbar (Schreibrechte?).');
             continue 2;
         }

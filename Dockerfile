@@ -9,7 +9,7 @@
 # dieses Volume gehen bei jedem Neustart alle Konten/Präsentationen
 # verloren.
 
-FROM php:8.2-apache
+FROM php:8.3-apache
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libsqlite3-dev \

@@ -41,8 +41,88 @@ export function initMap() {
   }
 
   createRoutingControl(map);
+  setupLocateControl(map);
 
   return map;
+}
+
+// Crosshair-Symbol für den "Mein Standort"-Knopf
+const LOCATE_SVG =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2b6cb0" '
+  + 'stroke-width="2" stroke-linecap="round" aria-hidden="true">'
+  + '<circle cx="12" cy="12" r="3.5"/>'
+  + '<line x1="12" y1="1.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22.5"/>'
+  + '<line x1="1.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22.5" y2="12"/></svg>';
+
+// "Mein Standort"-Steuerung (unten rechts): zeigt die eigene Position als
+// blauen Punkt mit Genauigkeitskreis und folgt (watch). Erneuter Klick
+// stoppt. Nur über HTTPS/localhost verfügbar (Browser-Vorgabe).
+function setupLocateControl(map) {
+  let active = false;
+  let dot = null;
+  let ring = null;
+  let firstFix = true;
+
+  const btn = L.DomUtil.create('a');
+  btn.href = '#';
+  btn.title = t('locate');
+  btn.setAttribute('role', 'button');
+  btn.setAttribute('aria-label', t('locate'));
+  btn.innerHTML = LOCATE_SVG;
+  btn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:30px;height:30px';
+
+  const stop = () => {
+    active = false;
+    map.stopLocate();
+    btn.style.background = '';
+    if (dot) { map.removeLayer(dot); dot = null; }
+    if (ring) { map.removeLayer(ring); ring = null; }
+  };
+
+  const start = () => {
+    active = true;
+    firstFix = true;
+    btn.style.background = '#d2e3f7'; // aktiv hervorheben
+    map.locate({ watch: true, enableHighAccuracy: true, maxZoom: 16 });
+  };
+
+  L.DomEvent.on(btn, 'click', e => {
+    L.DomEvent.stop(e);
+    active ? stop() : start();
+  });
+
+  map.on('locationfound', e => {
+    if (!active) return;
+    if (!dot) {
+      dot = L.circleMarker(e.latlng, {
+        radius: 7, color: '#fff', weight: 2,
+        fillColor: '#2b6cb0', fillOpacity: 1, interactive: false
+      }).addTo(map);
+      ring = L.circle(e.latlng, {
+        radius: e.accuracy, color: '#2b6cb0', weight: 1,
+        fillColor: '#2b6cb0', fillOpacity: 0.12, interactive: false
+      }).addTo(map);
+    } else {
+      dot.setLatLng(e.latlng);
+      ring.setLatLng(e.latlng).setRadius(e.accuracy);
+    }
+    if (firstFix) { map.setView(e.latlng, Math.max(map.getZoom(), 15)); firstFix = false; }
+  });
+
+  map.on('locationerror', () => {
+    if (!active) return;
+    stop();            // Dauer-watch würde sonst wiederholt Fehler melden
+    alert(t('locateError'));
+  });
+
+  const ctrl = L.control({ position: 'bottomright' });
+  ctrl.onAdd = () => {
+    const div = L.DomUtil.create('div', 'leaflet-bar');
+    div.appendChild(btn);
+    L.DomEvent.disableClickPropagation(div);
+    return div;
+  };
+  ctrl.addTo(map);
 }
 
 // Routing-Control für das aktuell eingestellte Profil (neu) aufbauen;

@@ -164,6 +164,34 @@ $json = str_replace('<', '\\u003c', $json); // nie </script> in der Payload
     maxZoom:19, attribution:'© OpenStreetMap-Mitwirkende'
   }).addTo(map);
 
+  // "Mein Standort": blauer Punkt + Genauigkeitskreis, folgt mit; erneuter
+  // Klick stoppt. Hilft beim Folgen der Tour unterwegs. Nur über HTTPS.
+  (function(){
+    var active=false, dot=null, ring=null, firstFix=true;
+    var svg='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2b6cb0" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><line x1="12" y1="1.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22.5" y2="12"/></svg>';
+    var btn=L.DomUtil.create('a'); btn.href='#'; btn.title='Mein Standort';
+    btn.setAttribute('role','button'); btn.setAttribute('aria-label','Mein Standort');
+    btn.innerHTML=svg; btn.style.cssText='display:flex;align-items:center;justify-content:center;width:30px;height:30px';
+    function stop(){ active=false; map.stopLocate(); btn.style.background='';
+      if(dot){map.removeLayer(dot);dot=null;} if(ring){map.removeLayer(ring);ring=null;} }
+    function start(){ active=true; firstFix=true; btn.style.background='#d2e3f7';
+      map.locate({watch:true,enableHighAccuracy:true,maxZoom:16}); }
+    L.DomEvent.on(btn,'click',function(e){ L.DomEvent.stop(e); active?stop():start(); });
+    map.on('locationfound', function(e){
+      if(!active) return;
+      if(!dot){
+        dot=L.circleMarker(e.latlng,{radius:7,color:'#fff',weight:2,fillColor:'#2b6cb0',fillOpacity:1,interactive:false}).addTo(map);
+        ring=L.circle(e.latlng,{radius:e.accuracy,color:'#2b6cb0',weight:1,fillColor:'#2b6cb0',fillOpacity:0.12,interactive:false}).addTo(map);
+      } else { dot.setLatLng(e.latlng); ring.setLatLng(e.latlng).setRadius(e.accuracy); }
+      if(firstFix){ map.setView(e.latlng, Math.max(map.getZoom(),15)); firstFix=false; }
+    });
+    map.on('locationerror', function(){ if(!active) return; stop();
+      alert('Standort konnte nicht ermittelt werden. Ist die Ortungsfreigabe im Browser erteilt?'); });
+    var ctrl=L.control({position:'bottomright'});
+    ctrl.onAdd=function(){ var d=L.DomUtil.create('div','leaflet-bar'); d.appendChild(btn); L.DomEvent.disableClickPropagation(d); return d; };
+    ctrl.addTo(map);
+  })();
+
   // Mini-Lightbox
   var W=document.createElement('div');
   W.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.92);z-index:99999;padding:4vh';

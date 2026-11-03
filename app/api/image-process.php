@@ -13,6 +13,30 @@
 
 declare(strict_types=1);
 
+// Verkleinertes JPEG unter einem eindeutigen Zufallsnamen ablegen.
+// Nutzt exklusives Anlegen (fopen 'x'): schlägt fehl, wenn der Name schon
+// existiert, statt eine bestehende Datei zu überschreiben — bei 64 Bit
+// Zufall extrem unwahrscheinlich, aber so prinzipiell ausgeschlossen.
+// Rückgabe: Dateiname oder null (Schreibfehler).
+function tl_store_jpeg(string $dir, string $bytes): ?string
+{
+    for ($try = 0; $try < 5; $try++) {
+        $name = bin2hex(random_bytes(8)) . '.jpg';
+        $fh = @fopen($dir . '/' . $name, 'xb'); // x = anlegen, Abbruch wenn vorhanden
+        if ($fh === false) {
+            continue; // Name belegt → neuer Versuch
+        }
+        $ok = fwrite($fh, $bytes) !== false;
+        fclose($fh);
+        if (!$ok) {
+            @unlink($dir . '/' . $name);
+            return null;
+        }
+        return $name;
+    }
+    return null;
+}
+
 // Orientation-Wert (1..8) aus JPEG-Bytes lesen; 1 = normal / unbekannt.
 function tl_jpeg_orientation(string $jpeg): int
 {

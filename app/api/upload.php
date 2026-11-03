@@ -53,8 +53,8 @@ if (!is_dir($dir) && !@mkdir($dir, 0770, true) && !is_dir($dir)) {
     json_error('Ablageverzeichnis konnte nicht angelegt werden.', 500);
 }
 
-$name = bin2hex(random_bytes(8)) . '.jpg';
-if (file_put_contents($dir . '/' . $name, $clean) === false) {
+$name = tl_store_jpeg($dir, $clean);
+if ($name === null) {
     json_error('Bild konnte nicht gespeichert werden.', 500);
 }
 

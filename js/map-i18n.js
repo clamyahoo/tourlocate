@@ -67,6 +67,8 @@ const STRINGS = {
     total: 'Gesamt: {km} km',
     routeError: 'Route derzeit nicht verfügbar',
     searchPlaceholder: 'Ort suchen…',
+    locate: 'Mein Standort',
+    locateError: 'Standort konnte nicht ermittelt werden. Ist die Ortungsfreigabe im Browser erteilt?',
     // POI / Dialog
     station: 'Station',
     newStation: 'Neue Station',
@@ -177,6 +179,8 @@ const STRINGS = {
     total: 'Total: {km} km',
     routeError: 'Route currently unavailable',
     searchPlaceholder: 'Search place…',
+    locate: 'My location',
+    locateError: 'Could not determine your location. Is location permission granted in the browser?',
     station: 'Station',
     newStation: 'New station',
     edit: 'Edit',

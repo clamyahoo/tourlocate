@@ -130,6 +130,9 @@ $csrf = csrf_token();
           <button id="importPhotosBtn" data-i18n="importPhotos">Fotos importieren…</button>
         </div>
         <div class="sb-row">
+          <button id="takePhotoBtn" data-i18n="takePhoto">Foto aufnehmen…</button>
+        </div>
+        <div class="sb-row">
           <button id="importGeoBtn" data-i18n="importGeo">GeoJSON importieren…</button>
         </div>
         <div class="sb-row">

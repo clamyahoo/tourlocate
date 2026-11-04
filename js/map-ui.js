@@ -6,7 +6,7 @@ import { getSetting, setSetting } from './map-settings.js';
 import { t, getLang, setLang, applyI18n } from './map-i18n.js';
 import { fileToDataURL } from './map-utils.js';
 import { applyRoutingSettings, setRouteWaypoints, renderRouteInfo } from './map-core.js';
-import { bindPoiPopup, renumberAndRoute, removePoi, removeLastPoi, clearPois, sortPois, pushUndo, popUndo, undo } from './map-pois.js';
+import { bindPoiPopup, createPoi, renumberAndRoute, removePoi, removeLastPoi, clearPois, sortPois, pushUndo, popUndo, undo } from './map-pois.js';
 import { importFromWebdav, webdavErrorMessage } from './map-webdav.js';
 import { importPhotoFiles } from './map-photos.js';
 
@@ -53,6 +53,53 @@ export function pickImage(callback) {
   setupFilePicker();
   __pickImageCb = callback;
   $('imgInput').click();
+}
+
+// ==================== Kamera-Aufnahme (capture) ====================
+// Eigener persistenter Picker mit capture-Attribut (öffnet auf dem Handy
+// direkt die Kamera). Getrennt vom normalen Bild-Picker, damit der
+// Dialog-Bildwähler weiterhin auch Galerie-Bilder erlaubt.
+let __camCb = null;
+
+function setupCamPicker() {
+  let inp = $('camInput');
+  if (!inp) {
+    inp = document.createElement('input');
+    inp.type = 'file';
+    inp.id = 'camInput';
+    inp.accept = 'image/*';
+    inp.setAttribute('capture', 'environment'); // bevorzugt die Rückkamera
+    inp.style.display = 'none';
+    document.body.appendChild(inp);
+  }
+  if (!inp.__bound) {
+    inp.__bound = true;
+    inp.addEventListener('change', async e => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = ''; // Reset für die nächste Aufnahme
+      if (f && typeof __camCb === 'function') {
+        const cb = __camCb;
+        __camCb = null;
+        try { await cb(f); }
+        catch (err) { console.error('captureImage:', err); alert(t('imageError', { msg: err?.message || err })); }
+      }
+    });
+  }
+}
+
+export function captureImage(callback) {
+  setupCamPicker();
+  __camCb = callback;
+  $('camInput').click();
+}
+
+// Einmalige, hochgenaue Standortabfrage als Promise.
+function getPositionOnce() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('no geolocation')); return; }
+    navigator.geolocation.getCurrentPosition(resolve, reject,
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+  });
 }
 
 // ==================== Lightbox (eigene, robuste Overlay-Lösung) ====================
@@ -455,9 +502,50 @@ export function setupUI(map) {
     }
   };
 
+  // Foto aufnehmen → Station an der LIVE-GPS-Position. Der Standort kommt
+  // vom Gerät (Geolocation), NICHT aus den EXIF-Daten des Fotos — das
+  // umgeht den Verlust der GPS-Daten beim Teilen/Export des Bildes.
+  const capturePhotoHere = () => {
+    captureImage(async file => {
+      const ri = $('routeinfo');
+      ri.textContent = t('locating');
+      let pos = null;
+      try { pos = await getPositionOnce(); } catch (e) { pos = null; }
+
+      let lat, lng, atCenter = false;
+      if (pos) { lat = pos.coords.latitude; lng = pos.coords.longitude; }
+      else { const c = map.getCenter(); lat = c.lat; lng = c.lng; atCenter = true; }
+
+      // Bild ablegen: Editor → Server-Upload (URL); statisch → Base64-DataURL
+      const q = IMG_QUALITIES[getSetting('imgQuality')] || IMG_QUALITIES.medium;
+      const now = new Date().toISOString();
+      let img;
+      try {
+        img = (typeof map.imageStore === 'function')
+          ? await map.imageStore(file, { lat, lng, date: now })
+          : await fileToDataURL(file, q.maxSide, q.quality);
+      } catch (e) {
+        renderRouteInfo(map);
+        alert(t('imageError', { msg: e?.message || e }));
+        return;
+      }
+
+      pushUndo(map);
+      createPoi(map, { lat, lng, name: '', img, createdAt: now });
+      renumberAndRoute(map);
+      if (!atCenter) map.setView([lat, lng], Math.max(map.getZoom(), 16));
+
+      ri.textContent = t('photoAdded');
+      setTimeout(() => { if (ri.textContent === t('photoAdded')) renderRouteInfo(map); }, 2500);
+      if (atCenter) alert(t('photoNoGeo'));
+    });
+  };
+
   const bindPhotos = () => {
     $('importPhotosBtn').onclick = () => { const f = $('filePhotos'); f.value = ''; f.click(); };
     $('filePhotos').onchange = e => { if (e.target.files.length) runPhotoImport(e.target.files); };
+    const camBtn = $('takePhotoBtn');
+    if (camBtn) camBtn.onclick = capturePhotoHere;
   };
 
   // Drag & Drop über die gesamte Karte. dragenter/leave werden gezählt,

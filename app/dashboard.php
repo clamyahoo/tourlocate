@@ -113,6 +113,15 @@ $csrf = csrf_token();
         <button id="liveShareBtn" style="display:none">Teilen</button>
         <button class="danger" id="liveStopBtn">Teilen beenden</button>
       </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
+        <span class="sub">Verlängern um</span>
+        <select id="liveExtendTtl" style="padding:7px;border:1px solid #cbd2d9;border-radius:7px;font:inherit">
+          <option value="15">15 Minuten</option>
+          <option value="60" selected>1 Stunde</option>
+          <option value="480">8 Stunden</option>
+        </select>
+        <button id="liveExtendBtn">Verlängern</button>
+      </div>
       <div class="sub" id="liveStatus" style="margin-top:10px"></div>
     </div>
     <div class="msg" id="liveMsg"></div>
@@ -173,6 +182,8 @@ $csrf = csrf_token();
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js" defer></script>
+<script>window.TL_LIVE_CSRF = <?= json_encode($csrf) ?>;</script>
+<script src="live-share.js"></script>
 <script>
 const CSRF = <?= json_encode($csrf) ?>;
 const IS_ADMIN = <?= $isAdmin ? 'true' : 'false' ?>;
@@ -366,119 +377,63 @@ document.getElementById('pwSaveBtn').onclick = async () => {
 };
 
 // ==================== Live-Standort teilen ====================
-async function liveApi(action, body) {
-  const opts = { headers: { 'X-CSRF-Token': CSRF } };
-  if (body) {
-    opts.method = 'POST';
-    opts.headers['Content-Type'] = 'application/json';
-    opts.body = JSON.stringify({ ...body, csrf: CSRF });
-  }
-  const res = await fetch('api/live.php?action=' + action, opts);
-  return res.json().catch(() => ({}));
-}
-
+// watchPosition/Ping/Hinweis-Banner/Fortsetzen liegen im gemeinsamen
+// Motor live-share.js (window.TLLiveShare). Hier nur die Dashboard-UI.
 const liveStartEl  = document.getElementById('liveStart');
 const liveActiveEl = document.getElementById('liveActive');
 const liveMsg      = document.getElementById('liveMsg');
 const liveStatus   = document.getElementById('liveStatus');
 const liveUrlInp   = document.getElementById('liveUrl');
 
-let liveToken = null;
-let liveWatchId = null;
-let liveExpiresAt = null;
-let liveLastPing = 0;         // Drossel: höchstens alle paar Sekunden senden
-let liveExpiryTimer = null;
-
-function liveShowActive(token, expiresAt) {
-  liveToken = token;
-  liveExpiresAt = expiresAt;
-  liveStartEl.style.display = 'none';
-  liveActiveEl.style.display = 'block';
-  const url = new URL('verfolgen.php?t=' + encodeURIComponent(token), location.href).href;
-  liveUrlInp.value = url;
-  if (navigator.share) document.getElementById('liveShareBtn').style.display = '';
-  liveTickExpiry();
-  if (liveExpiryTimer) clearInterval(liveExpiryTimer);
-  liveExpiryTimer = setInterval(liveTickExpiry, 1000);
-}
-
-function liveShowInactive(note) {
-  liveToken = null;
-  liveExpiresAt = null;
-  liveActiveEl.style.display = 'none';
-  liveStartEl.style.display = 'block';
-  if (liveExpiryTimer) { clearInterval(liveExpiryTimer); liveExpiryTimer = null; }
-  liveMsg.style.color = '#667';
-  liveMsg.textContent = note || '';
-}
-
 function liveTickExpiry() {
-  if (!liveExpiresAt) return;
-  const ms = new Date(liveExpiresAt).getTime() - Date.now();
-  if (ms <= 0) { liveStopWatch(); liveShowInactive('Teilen abgelaufen.'); return; }
+  const st = TLLiveShare.getState();
+  if (!st.active || !st.expiresAt) return;
+  const ms = new Date(st.expiresAt).getTime() - Date.now();
+  if (ms <= 0) return; // Auto-Stopp erledigt der Motor
   const min = Math.ceil(ms / 60000);
-  const end = new Date(liveExpiresAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  const end = new Date(st.expiresAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   document.getElementById('liveExpiry').textContent =
     'Läuft ab um ' + end + ' Uhr (noch ' + (min >= 60 ? Math.round(min/60) + ' Std.' : min + ' Min.') + ').';
 }
 
-function liveStopWatch() {
-  if (liveWatchId !== null) { navigator.geolocation.clearWatch(liveWatchId); liveWatchId = null; }
-}
-
-async function livePing(pos) {
-  if (!liveToken) return;
-  const nowMs = Date.now();
-  if (nowMs - liveLastPing < 3000) return;   // höchstens alle 3 Sek.
-  liveLastPing = nowMs;
-  const d = await liveApi('ping', {
-    token: liveToken,
-    lat: pos.coords.latitude,
-    lng: pos.coords.longitude,
-    acc: pos.coords.accuracy
-  });
-  if (d && d.active === false) {
-    // Serverseitig beendet/abgelaufen
-    liveStopWatch();
-    liveShowInactive('Teilen beendet.');
-    return;
+// Karte an den Motor-Zustand anpassen (aktiv/inaktiv)
+TLLiveShare.onChange((st) => {
+  if (st.active) {
+    liveStartEl.style.display = 'none';
+    liveActiveEl.style.display = 'block';
+    liveUrlInp.value = TLLiveShare.urlFor(st.token);
+    if (navigator.share) document.getElementById('liveShareBtn').style.display = '';
+    liveStatus.textContent = 'Dein Standort wird gesendet, solange diese Seite oder der Editor geöffnet ist.';
+    liveTickExpiry();
+  } else {
+    liveActiveEl.style.display = 'none';
+    liveStartEl.style.display = 'block';
   }
-  liveStatus.textContent = 'Standort wird gesendet · zuletzt ' +
-    new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-function liveStartWatch() {
-  if (!navigator.geolocation) {
-    liveStatus.textContent = 'Dieses Gerät bietet keine Ortung.';
-    return;
-  }
-  liveStatus.textContent = 'Warte auf Ortung…';
-  liveLastPing = 0;
-  liveWatchId = navigator.geolocation.watchPosition(
-    livePing,
-    (err) => {
-      liveStatus.textContent = err.code === err.PERMISSION_DENIED
-        ? 'Ortungsfreigabe verweigert — ohne sie kann nichts gesendet werden.'
-        : 'Standort nicht verfügbar.';
-    },
-    { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
-  );
-}
+});
+setInterval(liveTickExpiry, 1000);
 
 document.getElementById('liveStartBtn').onclick = async () => {
   liveMsg.textContent = '';
   const label = document.getElementById('liveLabel').value.trim();
   const ttl = Number(document.getElementById('liveTtl').value);
-  const d = await liveApi('start', { label, ttl });
-  if (!d.ok) { liveMsg.style.color = '#c0392b'; liveMsg.textContent = d.error || 'Fehler.'; return; }
-  liveShowActive(d.token, d.expiresAt);
-  liveStartWatch();
+  const d = await TLLiveShare.start(label, ttl);
+  if (!d.ok) { liveMsg.style.color = '#c0392b'; liveMsg.textContent = d.error || 'Fehler.'; }
 };
 
 document.getElementById('liveStopBtn').onclick = async () => {
-  if (liveToken) await liveApi('stop', { token: liveToken });
-  liveStopWatch();
-  liveShowInactive('Teilen beendet.');
+  await TLLiveShare.stop();
+  liveMsg.style.color = '#667';
+  liveMsg.textContent = 'Teilen beendet.';
+};
+
+document.getElementById('liveExtendBtn').onclick = async () => {
+  const ttl = Number(document.getElementById('liveExtendTtl').value);
+  const d = await TLLiveShare.extend(ttl);
+  if (!d.ok) { liveMsg.style.color = '#c0392b'; liveMsg.textContent = d.error || 'Fehler.'; return; }
+  liveTickExpiry();
+  const b = document.getElementById('liveExtendBtn');
+  const t = b.textContent; b.textContent = 'Verlängert ✓';
+  setTimeout(() => { b.textContent = t; }, 1500);
 };
 
 document.getElementById('liveCopyBtn').onclick = async () => {
@@ -493,15 +448,6 @@ document.getElementById('liveShareBtn').onclick = async () => {
   try { await navigator.share({ title: 'Mein Live-Standort', url: liveUrlInp.value }); }
   catch (e) { /* Nutzer hat abgebrochen — ignorieren */ }
 };
-
-// Beim Laden: läuft noch eine Sitzung? Dann Anzeige + Ortung fortsetzen.
-(async () => {
-  const d = await liveApi('status');
-  if (d && d.ok && d.share) {
-    liveShowActive(d.share.token, d.share.expiresAt);
-    liveStartWatch();
-  }
-})();
 </script>
 </body>
 </html>

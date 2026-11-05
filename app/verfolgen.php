@@ -49,6 +49,7 @@ $heading = $label !== '' ? $label : 'Live-Standort';
         padding:6px 14px;font-size:13px;color:#333;box-shadow:0 1px 6px rgba(0,0,0,.12);
         max-width:90vw;text-align:center}
   #pill.off{color:#777}
+  #pill.stale{color:#92400e;background:#fff7ed;border-color:#fed7aa}
 </style>
 </head>
 <body>
@@ -72,10 +73,32 @@ $heading = $label !== '' ? $label : 'Live-Standort';
   }).addTo(map);
 
   var dot=null, ring=null, firstFix=true;
+  var STALE_SEC = 120; // ab 2 Min. ohne Update gilt die Position als veraltet
 
-  function setPill(text, off){
+  // state: 'live' | 'stale' | 'off'
+  function setPill(text, state){
     pill.textContent = text;
-    pill.className = off ? 'off' : '';
+    pill.className = state === 'live' ? '' : state;
+  }
+
+  function setDotStale(stale){
+    if (!dot) return;
+    var c = stale ? '#9ca3af' : '#2b6cb0';
+    dot.setStyle({ fillColor:c });
+    if (ring) ring.setStyle({ color:c, fillColor:c });
+  }
+
+  // Frische anhand des Melde-Zeitstempels bewerten und Pille + Punkt setzen
+  function renderFreshness(atIso){
+    var d = new Date(atIso); if (isNaN(d)) return;
+    var ageSec = Math.max(0, Math.round((Date.now() - d.getTime())/1000));
+    if (ageSec > STALE_SEC){
+      setPill('⚠️ Standort potentiell veraltet (letzte Aktualisierung ' + ago(atIso) + ')', 'stale');
+      setDotStale(true);
+    } else {
+      setPill('Aktualisiert ' + ago(atIso), 'live');
+      setDotStale(false);
+    }
   }
 
   // "vor X Sek./Min." aus einem ISO-Zeitstempel
@@ -89,6 +112,7 @@ $heading = $label !== '' ? $label : 'Live-Standort';
   }
 
   var lastAt = null;
+  var activeState = false;
 
   function place(lat, lng, acc){
     var ll = [lat, lng];
@@ -107,29 +131,32 @@ $heading = $label !== '' ? $label : 'Live-Standort';
       var res = await fetch('api/live.php?action=read&t=' + encodeURIComponent(TOKEN), {cache:'no-store'});
       var d = await res.json().catch(function(){ return {}; });
       if (!d.ok){
-        setPill(d.error || 'Nicht verfügbar.', true);
+        activeState = false;
+        setPill(d.error || 'Nicht verfügbar.', 'off');
         return;
       }
       if (!d.active){
-        setPill(d.expired ? 'Teilen abgelaufen.' : 'Teilen beendet.', true);
+        activeState = false;
+        setPill(d.expired ? 'Teilen abgelaufen.' : 'Teilen beendet.', 'off');
         return;
       }
+      activeState = true;
       if (d.lat != null && d.lng != null){
         place(d.lat, d.lng, d.acc);
         lastAt = d.at;
-        setPill('Aktualisiert ' + ago(d.at), false);
+        renderFreshness(d.at);
       } else {
-        setPill('Warten auf Position…', false);
+        setPill('Warten auf Position…', 'live');
       }
     } catch(e){
-      setPill('Verbindungsfehler.', true);
+      setPill('Verbindungsfehler.', 'off');
     }
   }
 
   poll();
   setInterval(poll, 5000);
-  // Sekundentakt nur für die "vor X Sek."-Anzeige (ohne neue Anfrage)
-  setInterval(function(){ if (lastAt) setPill('Aktualisiert ' + ago(lastAt), false); }, 1000);
+  // Sekundentakt nur für die Frische-Anzeige (ohne neue Anfrage)
+  setInterval(function(){ if (activeState && lastAt) renderFreshness(lastAt); }, 1000);
 })();
 </script>
 </body>

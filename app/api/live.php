@@ -138,6 +138,31 @@ switch ($action) {
         json_out(['ok' => true, 'active' => true]);
     }
 
+    case 'extend': {
+        $ttl = (int) ($input['ttl'] ?? 60);
+        if (!in_array($ttl, TL_LIVE_TTLS, true)) {
+            $ttl = 60;
+        }
+        // Aktive, nicht abgelaufene Sitzung des Nutzers holen und die
+        // gewählte Dauer auf die RESTLAUFZEIT aufschlagen (gleicher Token,
+        // damit der verschickte Link gültig bleibt).
+        $st = db()->prepare(
+            'SELECT token, expires_at FROM live_shares
+              WHERE user_id = ? AND active = 1 AND expires_at > ?
+              ORDER BY id DESC LIMIT 1'
+        );
+        $st->execute([$uid, now_iso()]);
+        $row = $st->fetch();
+        if (!$row) {
+            json_error('Keine aktive Sitzung zum Verlängern.', 404);
+        }
+        $base    = max(strtotime($row['expires_at']), time());
+        $expires = gmdate('Y-m-d\TH:i:s\Z', $base + $ttl * 60);
+        db()->prepare('UPDATE live_shares SET expires_at = ? WHERE token = ? AND user_id = ?')
+            ->execute([$expires, $row['token'], $uid]);
+        json_out(['ok' => true, 'token' => $row['token'], 'expiresAt' => $expires]);
+    }
+
     case 'stop': {
         $token = (string) ($input['token'] ?? '');
         db()->prepare('UPDATE live_shares SET active = 0 WHERE token = ? AND user_id = ?')

@@ -242,6 +242,11 @@ $csrf = csrf_token();
 
   <script>window.TL_EDITOR = { pid: <?= $pid ?>, csrf: <?= json_encode($csrf) ?> };</script>
 
+  <!-- Live-Standort-Hinweis: zeigt überall an, dass gerade geteilt wird,
+       und hält die Ortung beim Seitenwechsel am Laufen -->
+  <script>window.TL_LIVE_CSRF = window.TL_EDITOR.csrf;</script>
+  <script src="live-share.js"></script>
+
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet-control-geocoder/dist/Control.Geocoder.js" defer></script>

@@ -38,6 +38,13 @@ switch ($action) {
         break;
     case 'logout':
         require_csrf($input);
+        // Laufende Live-Standort-Sitzungen beim Abmelden sofort beenden
+        // (sonst bliebe der geteilte Link mit eingefrorener Position aktiv).
+        $uidLogout = current_user_id();
+        if ($uidLogout !== null) {
+            db()->prepare('UPDATE live_shares SET active = 0 WHERE user_id = ? AND active = 1')
+                ->execute([$uidLogout]);
+        }
         logout_user();
         json_out(['ok' => true]);
         break;

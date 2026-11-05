@@ -259,6 +259,11 @@ document.getElementById('newBtn').onclick = async () => {
 };
 
 document.getElementById('logoutBtn').onclick = async () => {
+  // Warnen, wenn gerade geteilt wird — Abmelden beendet das Teilen.
+  if (window.TLLiveShare && TLLiveShare.getState().active &&
+      !confirm('Du teilst gerade deinen Standort — mit dem Abmelden wird das Teilen beendet. Fortfahren?')) {
+    return;
+  }
   await fetch('api/auth.php?action=logout', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },

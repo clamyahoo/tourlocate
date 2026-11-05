@@ -70,7 +70,6 @@
       '#tlLiveBanner{display:flex;align-items:center;gap:8px;background:#1a1a1a;color:#fff;border-radius:22px;' +
       'padding:8px 14px;font:13px/1.3 system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:100%;' +
       'touch-action:none;cursor:move;user-select:none;-webkit-user-select:none}' +
-      '#tlLiveBanner.tlVert{flex-direction:column;gap:6px;padding:10px;border-radius:18px;text-align:center}' +
       '#tlLiveBanner .tlLiveDot{width:10px;height:10px;border-radius:50%;background:#e53e3e;flex:0 0 auto;' +
       'animation:tlLivePulse 1.4s ease-in-out infinite}' +
       '#tlLiveBanner button{background:#fff;color:#1a1a1a;border:0;border-radius:14px;padding:5px 12px;' +
@@ -101,7 +100,8 @@
     info.id = 'tlLiveWakeInfo';
     info.style.display = 'none';
     info.innerHTML = '<span>Wake-Lock aktiv: Bildschirm wird nicht automatisch gesperrt oder gedimmt. '
-      + 'Bei Bildschirmsperre von Hand oder App-Wechsel stoppt die automatische Aktualisierung.</span>'
+      + 'Bei Bildschirmsperre von Hand oder App-Wechsel stoppt die automatische Aktualisierung — '
+      + 'sie läuft automatisch weiter, sobald das Tourlocate-Fenster wieder aktiv ist.</span>'
       + '<button id="tlLiveWakeHide" type="button">Ausblenden</button>';
 
     wrap.appendChild(b);
@@ -161,16 +161,7 @@
       wrap.style.left = nx + 'px';
       wrap.style.top = ny + 'px';
     });
-    const end = (e) => {
-      dragging = false;
-      try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
-      // An eine Seite geschoben? Dann (eingeklappt) vertikal darstellen.
-      const r = wrap.getBoundingClientRect();
-      const cx = r.left + r.width / 2;
-      wrap.dataset.dock = cx < window.innerWidth * 0.15 ? 'left'
-                        : cx > window.innerWidth * 0.85 ? 'right' : '';
-      updateBanner();
-    };
+    const end = (e) => { dragging = false; try { handle.releasePointerCapture(e.pointerId); } catch (_) {} };
     handle.addEventListener('pointerup', end);
     handle.addEventListener('pointercancel', end);
   }
@@ -181,15 +172,10 @@
     const toggle = document.getElementById('tlLiveToggle');
     const stop = document.getElementById('tlLiveStop');
     const banner = msg.parentElement;
-    const wrap = document.getElementById('tlLiveWrap');
-    const docked = wrap ? wrap.dataset.dock : '';
-    // Vertikal nur in der eingeklappten Pille, wenn an eine Seite geschoben
-    const vertical = collapsed && (docked === 'left' || docked === 'right');
     if (banner) {
-      banner.classList.toggle('tlVert', vertical);
-      // Eingeklappt/vertikal: schmale Pille; aufgeklappt feste, breitere
-      // Box (sonst bricht der Text in viele Zeilen um).
-      banner.style.width = (collapsed || vertical) ? 'auto' : 'min(360px, calc(100vw - 68px))';
+      // Eingeklappt: schmale Pille; aufgeklappt feste, breitere Box
+      // (sonst bricht der Text in viele Zeilen um).
+      banner.style.width = collapsed ? 'auto' : 'min(360px, calc(100vw - 68px))';
     }
     if (toggle) toggle.textContent = collapsed ? '▸' : '▾';
     if (stop) stop.style.display = collapsed ? 'none' : '';

@@ -9,11 +9,19 @@ import { applyRoutingSettings, setRouteWaypoints, renderRouteInfo } from './map-
 import { bindPoiPopup, createPoi, renumberAndRoute, removePoi, removeLastPoi, clearPois, sortPois, pushUndo, popUndo, undo } from './map-pois.js';
 import { importFromWebdav, webdavErrorMessage } from './map-webdav.js';
 import { importPhotoFiles } from './map-photos.js';
+import { readExif } from './map-exif.js';
 
 const $ = id => document.getElementById(id);
 
 // Karten-Referenz für die Lightbox (gesetzt in setupUI)
 let _map = null;
+
+// Kamera-Symbol für den Karten-Knopf „Foto vom Standort aufnehmen"
+const CAMERA_SVG =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2b6cb0" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>'
+  + '<circle cx="12" cy="13" r="3.6"/></svg>';
 
 // ==================== Zentraler Dateipicker (DDG-robust) ====================
 // Ein persistenter Input mit Einmal-Bindung + value-Reset; frisch erzeugte
@@ -502,19 +510,36 @@ export function setupUI(map) {
     }
   };
 
-  // Foto aufnehmen → Station an der LIVE-GPS-Position. Der Standort kommt
-  // vom Gerät (Geolocation), NICHT aus den EXIF-Daten des Fotos — das
-  // umgeht den Verlust der GPS-Daten beim Teilen/Export des Bildes.
+  // Foto vom Standort aufnehmen → Station an der Position des Fotos.
+  // Quelle der Position in dieser Priorität:
+  //   1) EXIF-GPS im Foto (schreiben viele Geräte selbst hinein),
+  //   2) sonst nach Rückfrage der Live-Gerätestandort (Geolocation),
+  //   3) sonst die Kartenmitte (freundlicher Hinweis zum Verschieben).
+  // Die Koordinaten liegen getrennt vom Bild (DB bzw. POI) — der Verlust
+  // der EXIF-Daten beim späteren Teilen/Export spielt daher keine Rolle.
   const capturePhotoHere = () => {
     captureImage(async file => {
       const ri = $('routeinfo');
-      ri.textContent = t('locating');
-      let pos = null;
-      try { pos = await getPositionOnce(); } catch (e) { pos = null; }
+      let lat = null, lng = null, exifDate = null;
 
-      let lat, lng, atCenter = false;
-      if (pos) { lat = pos.coords.latitude; lng = pos.coords.longitude; }
-      else { const c = map.getCenter(); lat = c.lat; lng = c.lng; atCenter = true; }
+      // 1) EXIF-GPS aus dem Original-Foto
+      try {
+        const ex = readExif(await file.arrayBuffer());
+        if (ex.lat != null && ex.lng != null) { lat = ex.lat; lng = ex.lng; exifDate = ex.date; }
+      } catch (e) { /* kein lesbares EXIF → weiter */ }
+
+      // 2) Kein EXIF → fragen, ob der Gerätestandort geholt werden soll
+      if (lat == null && confirm(t('photoAskGeo'))) {
+        ri.textContent = t('locating');
+        try {
+          const pos = await getPositionOnce();
+          lat = pos.coords.latitude; lng = pos.coords.longitude;
+        } catch (e) { /* Freigabe verweigert / kein Fix → weiter */ }
+      }
+
+      // 3) Immer noch keine Position → Kartenmitte
+      let atCenter = false;
+      if (lat == null) { const c = map.getCenter(); lat = c.lat; lng = c.lng; atCenter = true; }
 
       // Bild ablegen: Editor → Server-Upload (URL); statisch → Base64-DataURL
       const q = IMG_QUALITIES[getSetting('imgQuality')] || IMG_QUALITIES.medium;
@@ -522,7 +547,7 @@ export function setupUI(map) {
       let img;
       try {
         img = (typeof map.imageStore === 'function')
-          ? await map.imageStore(file, { lat, lng, date: now })
+          ? await map.imageStore(file, { lat, lng, date: exifDate || now })
           : await fileToDataURL(file, q.maxSide, q.quality);
       } catch (e) {
         renderRouteInfo(map);
@@ -531,7 +556,7 @@ export function setupUI(map) {
       }
 
       pushUndo(map);
-      createPoi(map, { lat, lng, name: '', img, createdAt: now });
+      createPoi(map, { lat, lng, name: '', img, createdAt: exifDate || now });
       renumberAndRoute(map);
       if (!atCenter) map.setView([lat, lng], Math.max(map.getZoom(), 16));
 
@@ -546,6 +571,28 @@ export function setupUI(map) {
     $('filePhotos').onchange = e => { if (e.target.files.length) runPhotoImport(e.target.files); };
     const camBtn = $('takePhotoBtn');
     if (camBtn) camBtn.onclick = capturePhotoHere;
+  };
+
+  // Kamera-Knopf direkt auf der Karte (unten rechts, Stil wie „Mein
+  // Standort") — schneller Zugriff unterwegs, ohne die Seitenleiste zu
+  // öffnen. Nur dieses eine zusätzliche Element, damit die Karte ruhig bleibt.
+  const addCameraControl = () => {
+    const btn = L.DomUtil.create('a');
+    btn.href = '#';
+    btn.title = t('takePhoto');
+    btn.setAttribute('role', 'button');
+    btn.setAttribute('aria-label', t('takePhoto'));
+    btn.innerHTML = CAMERA_SVG;
+    btn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:30px;height:30px';
+    L.DomEvent.on(btn, 'click', e => { L.DomEvent.stop(e); capturePhotoHere(); });
+    const ctrl = L.control({ position: 'bottomright' });
+    ctrl.onAdd = () => {
+      const d = L.DomUtil.create('div', 'leaflet-bar');
+      d.appendChild(btn);
+      L.DomEvent.disableClickPropagation(d);
+      return d;
+    };
+    ctrl.addTo(map);
   };
 
   // Drag & Drop über die gesamte Karte. dragenter/leave werden gezählt,
@@ -618,6 +665,7 @@ export function setupUI(map) {
   bindToolbar();
   bindWebdav();
   bindPhotos();
+  addCameraControl();
   setupDragDrop();
   window.addEventListener('pageshow', bindToolbar);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) bindToolbar(); });

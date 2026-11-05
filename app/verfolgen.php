@@ -1,0 +1,136 @@
+<?php
+// Öffentliche Live-Standort-Ansicht.
+//   verfolgen.php?t=<token>
+// Kein Login nötig. Zeigt die zuletzt gemeldete Position als wandernden
+// Punkt; fragt api/live.php?action=read im Takt ab. Es wird nur die
+// aktuelle Position angezeigt, keine Bewegungshistorie.
+declare(strict_types=1);
+require_once __DIR__ . '/api/bootstrap.php';
+
+$token = (string) ($_GET['t'] ?? '');
+
+// Existenzprüfung wie bei view.php: unbekannter Link → Fehlerseite.
+// Der tatsächliche Zustand (aktiv/abgelaufen) kommt dann live per JS.
+$st = db()->prepare('SELECT label FROM live_shares WHERE token = ?');
+$st->execute([$token]);
+$P = $token !== '' ? $st->fetch() : false;
+
+if (!$P) {
+    http_response_code(404);
+    echo '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">'
+       . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+       . '<title>Tourlocate</title><style>body{margin:0;font-family:system-ui,sans-serif;'
+       . 'background:#f4f6f8;color:#1a1a1a;display:flex;min-height:100vh;align-items:center;'
+       . 'justify-content:center;padding:20px;text-align:center}</style></head><body><div>'
+       . '<h1>Nicht gefunden</h1><p>Dieser Link ist ungültig oder wurde beendet.</p>'
+       . '</div></body></html>';
+    exit;
+}
+
+$label = (string) ($P['label'] ?? '');
+$heading = $label !== '' ? $label : 'Live-Standort';
+?>
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title><?= htmlspecialchars($heading, ENT_QUOTES) ?> — Tourlocate</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="icon" type="image/png" href="../img/logo.png">
+<style>
+  html,body{height:100%;margin:0;font-family:system-ui,sans-serif}
+  #bar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:#fff;border-bottom:1px solid #e2e8f0}
+  #bar img{width:26px;height:26px;border-radius:50%}
+  #bar strong{font-size:16px;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #map{height:calc(100vh - 45px)}
+  #pill{position:absolute;left:50%;top:56px;transform:translateX(-50%);z-index:1000;
+        background:rgba(255,255,255,.95);border:1px solid #e2e8f0;border-radius:20px;
+        padding:6px 14px;font-size:13px;color:#333;box-shadow:0 1px 6px rgba(0,0,0,.12);
+        max-width:90vw;text-align:center}
+  #pill.off{color:#777}
+</style>
+</head>
+<body>
+<div id="bar">
+  <img src="../img/logo.png" alt="" onerror="this.style.display='none'">
+  <strong><?= htmlspecialchars($heading, ENT_QUOTES) ?></strong>
+  <a href="impressum.php" style="font-size:12px;color:#888;white-space:nowrap">Impressum</a>
+</div>
+<div id="map"></div>
+<div id="pill">Warten auf Position…</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function(){
+  var TOKEN = <?= json_encode($token) ?>;
+  var pill = document.getElementById('pill');
+
+  var map = L.map('map').setView([0,0],2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:19, attribution:'© OpenStreetMap-Mitwirkende'
+  }).addTo(map);
+
+  var dot=null, ring=null, firstFix=true;
+
+  function setPill(text, off){
+    pill.textContent = text;
+    pill.className = off ? 'off' : '';
+  }
+
+  // "vor X Sek./Min." aus einem ISO-Zeitstempel
+  function ago(iso){
+    var d = new Date(iso); if (isNaN(d)) return '';
+    var s = Math.max(0, Math.round((Date.now() - d.getTime())/1000));
+    if (s < 60) return 'vor ' + s + ' Sek.';
+    var m = Math.round(s/60);
+    if (m < 60) return 'vor ' + m + ' Min.';
+    return 'vor ' + Math.round(m/60) + ' Std.';
+  }
+
+  var lastAt = null;
+
+  function place(lat, lng, acc){
+    var ll = [lat, lng];
+    if (!dot){
+      dot = L.circleMarker(ll,{radius:7,color:'#fff',weight:2,fillColor:'#2b6cb0',fillOpacity:1,interactive:false}).addTo(map);
+      ring = L.circle(ll,{radius:acc||0,color:'#2b6cb0',weight:1,fillColor:'#2b6cb0',fillOpacity:0.12,interactive:false}).addTo(map);
+    } else {
+      dot.setLatLng(ll);
+      ring.setLatLng(ll).setRadius(acc||0);
+    }
+    if (firstFix){ map.setView(ll, 16); firstFix=false; }
+  }
+
+  async function poll(){
+    try {
+      var res = await fetch('api/live.php?action=read&t=' + encodeURIComponent(TOKEN), {cache:'no-store'});
+      var d = await res.json().catch(function(){ return {}; });
+      if (!d.ok){
+        setPill(d.error || 'Nicht verfügbar.', true);
+        return;
+      }
+      if (!d.active){
+        setPill(d.expired ? 'Teilen abgelaufen.' : 'Teilen beendet.', true);
+        return;
+      }
+      if (d.lat != null && d.lng != null){
+        place(d.lat, d.lng, d.acc);
+        lastAt = d.at;
+        setPill('Aktualisiert ' + ago(d.at), false);
+      } else {
+        setPill('Warten auf Position…', false);
+      }
+    } catch(e){
+      setPill('Verbindungsfehler.', true);
+    }
+  }
+
+  poll();
+  setInterval(poll, 5000);
+  // Sekundentakt nur für die "vor X Sek."-Anzeige (ohne neue Anfrage)
+  setInterval(function(){ if (lastAt) setPill('Aktualisiert ' + ago(lastAt), false); }, 1000);
+})();
+</script>
+</body>
+</html>

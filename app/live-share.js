@@ -81,7 +81,7 @@
       'border:1px solid #fed7aa;border-radius:14px;padding:7px 12px;font:12px/1.35 system-ui,sans-serif;' +
       'box-shadow:0 2px 10px rgba(0,0,0,.15);max-width:100%}' +
       '#tlLiveWakeInfo button{background:none;border:0;color:#92400e;text-decoration:underline;cursor:pointer;' +
-      'font:inherit;flex:0 0 auto;padding:0;white-space:nowrap}' +
+      'font:inherit;flex:0 0 auto;padding:0;text-align:left}' +
       '@keyframes tlLivePulse{0%,100%{opacity:1}50%{opacity:.25}}';
     document.head.appendChild(style);
 
@@ -102,7 +102,7 @@
     info.innerHTML = '<span>Wake-Lock aktiv: Bildschirm wird nicht automatisch gesperrt oder gedimmt. '
       + 'Bei Bildschirmsperre von Hand oder App-Wechsel stoppt die automatische Aktualisierung — '
       + 'sie läuft automatisch weiter, sobald das Tourlocate-Fenster wieder aktiv ist.</span>'
-      + '<button id="tlLiveWakeHide" type="button">Ausblenden</button>';
+      + '<button id="tlLiveWakeHide" type="button">Für diese Teilen-Session ausblenden</button>';
 
     wrap.appendChild(b);
     wrap.appendChild(info);

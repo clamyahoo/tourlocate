@@ -7,15 +7,17 @@ Es gibt keinen Build-Schritt und keine Abhängigkeiten außerhalb des Browsers �
 ## Funktionen
 
 - **Stationen anlegen**: Doppelklick oder Rechtsklick auf die Karte (mobil: Tippen bzw. langes Drücken); ein Dialog fragt Bezeichnung, Link (mit optionaler Beschriftung) und ein Bild ab.
-- **Automatisches Routing**: Die Stationen werden per OSRM (FOSSGIS-Instanz) verbunden — wahlweise als echte Route, als Luftlinie oder ganz ohne Verbindung; das Routing-Profil ist zwischen Auto, Rad und zu Fuß umschaltbar. Die Gesamtdistanz wird live angezeigt.
+- **Automatisches Routing**: Die Stationen werden per OSRM (FOSSGIS-Instanz) verbunden — wahlweise als echte Route, als Luftlinie, entlang einer importierten GPX-Aufzeichnung („Aufgezeichnete Strecke") oder ganz ohne Verbindung; das Routing-Profil ist zwischen Auto, Rad und zu Fuß umschaltbar. Die Gesamtdistanz wird live angezeigt.
 - **Bilder**: Fotos werden beim Anhängen automatisch verkleinert (Qualitätsstufe wählbar), HEIC-Dateien werden nach JPEG konvertiert. Anklicken eines Bildes öffnet eine Lightbox.
 - **Sortierung**: Stationen lassen sich nach Name oder Anlage-/Aufnahmedatum auf- oder absteigend ordnen.
 - **Import/Export**:
   - **GeoJSON** — vollständiger Export inkl. Bildern, Links und Datum; auf der Seite wieder importierbar.
-  - **GPX** — kompatibel mit Komoot & Co. (Track + Wegpunkte mit Zeitstempel).
+  - **GPX** — kompatibel mit Komoot & Co. (Track + Wegpunkte mit Zeitstempel); beim Import wird eine reine Track-Aufzeichnung als „Aufgezeichnete Strecke" übernommen.
   - **Ein-Datei-HTML** — ein eigenständiges HTML-Dokument mit eingebetteter Karte, das auch ganz ohne Internetverbindung funktioniert (der zuletzt sichtbare Kartenausschnitt wird als Bild mit eingebettet).
   - **HTML + Bilder (ZIP)** — wie oben, aber die Bilder liegen als einzelne JPEG-Dateien in einem Ordner statt eingebettet zu sein (sinnvoll bei großen Touren); die JPEGs erhalten dabei EXIF-Metadaten mit Stationsname, Datum und GPS-Position.
+  - **IMS-Paket (Moodle)** — die Tour als IMS-Content-Package (offener Standard) für Moodle und andere Lernplattformen.
 - **Foto-Import (lokal)**: Mehrere Fotos auf einmal per Dateiauswahl oder Drag & Drop auf die Karte ablegen — sie werden anhand ihrer GPS-Metadaten automatisch als Stationen platziert und nach Aufnahmedatum nummeriert. Unterstützt **JPEG und HEIC** (iPhone-Format), Fotos ohne Positionsdaten werden übersprungen. Läuft rein im Browser, ohne Server.
+- **Unterwegs / eigener Standort**: Ein Knopf zeigt den **eigenen Standort** als blauen Punkt mit Genauigkeitskreis auf der Karte (Browser-Ortung, nur über HTTPS). Zusätzlich lässt sich direkt **ein Foto vom aktuellen Standort aufnehmen** — die Station wird an der per GPS ermittelten Live-Position angelegt (umgeht so den häufigen Verlust der EXIF-GPS-Daten beim Weitergeben von Fotos).
 - **WebDAV/Nextcloud-Import**: Ein WebDAV-Ordner (z. B. ein Nextcloud-Album) lässt sich als Bildquelle hinterlegen. Beim Import werden alle Fotos geladen, anhand ihrer GPS-Metadaten automatisch als Stationen platziert und nach Aufnahmedatum nummeriert. **Benötigt PHP-fähiges Hosting** (siehe Abschnitt „Voraussetzungen" unten); ohne PHP funktioniert der Rest der Seite unverändert, nur dieser Import steht dann nicht zur Verfügung.
 - **Kartenlayer**: OpenStreetMap, CyclOSM und OpenTopoMap (alle CC-BY-SA) sowie ein Satellitenlayer (Sentinel-2 cloudless von EOX, CC BY-NC-SA — nur für nicht-kommerzielle Nutzung). Es kommen bewusst keine proprietär lizenzierten Kartenanbieter zum Einsatz.
 - **Zweisprachig**: Die komplette Oberfläche ist auf Deutsch und Englisch verfügbar (Umschalter in der Seitenleiste).
@@ -46,13 +48,23 @@ Nur relevant, wenn Bilder automatisch aus einem WebDAV-/Nextcloud-Ordner importi
 - `webdav-proxy.php` muss zusammen mit den übrigen Dateien im selben Verzeichnis wie `index.html` hochgeladen sein.
 - Der in `webdav-proxy.php` und `js/map-config.js` hinterlegte `PROXY_KEY` sollte vor dem produktiven Einsatz in beiden Dateien auf einen eigenen, zufälligen Wert geändert werden (siehe Kommentare in beiden Dateien).
 
-## User-Version (`/app`, in Entwicklung)
+## User-Version (`/app`)
 
-Neben der statischen App entsteht unter `/app/` eine Mehrbenutzer-Version mit Konten: Präsentationen serverseitig speichern, Bilder hochladen (automatisch auf ~200 KB verkleinert), öffentliche Teilen-Links mit Passwortschutz und eine dauerhafte WebDAV-/Nextcloud-Verbindung, die neue Fotos automatisch als Stationen ergänzt. Details in [app/DESIGN.md](app/DESIGN.md).
+Neben der statischen App gibt es unter `/app/` eine Mehrbenutzer-Version mit Konten (in Betrieb, wird weiterentwickelt). Sie nutzt denselben Karten-/Editor-Code wie die statische App, speichert die Daten aber serverseitig (PHP + SQLite) und bietet darüber hinaus:
+
+- **Konten & Präsentationen**: Registrierung/Login, Touren serverseitig speichern und im Editor bearbeiten; Bilder werden hochgeladen und automatisch auf ~200 KB verkleinert.
+- **Teilen-Links**: öffentliche, optional passwortgeschützte Links auf eine Nur-Ansicht der Tour — kein Konto beim Empfänger nötig.
+- **Live-Standort teilen**: den eigenen Standort über einen öffentlichen Link live mitteilen (wählbare Laufzeit, jederzeit abschaltbar, verlängerbar; der Punkt wird als „potentiell veraltet" markiert, wenn keine Updates mehr kommen). Nutzt die Browser-Ortung und läuft, solange die Tourlocate-Seite im Vordergrund ist; ein optionaler Bildschirm-Wachhalter (Wake-Lock) verhindert das automatische Sperren.
+- **Dauerhafte WebDAV-/Nextcloud-Verbindung**: ein hinterlegter Ordner ergänzt neue Fotos automatisch als Stationen (per Cron, siehe unten).
+- **Registrierungssteuerung**: offen / nur per Einladung / geschlossen; Admins können Einladungen und Konten anlegen.
+- **Kontosicherheit**: Passwort ändern (Selfservice + Admin-Reset), Passwort-Richtlinie, optional Zwei-Faktor-Authentifizierung (TOTP).
+- **Moderation**: Admin-Bereich mit Nutzerverwaltung, Audit-Log und einem „Inhalt melden"-Link in der öffentlichen Ansicht.
+
+Details zu Architektur und Sicherheitsmodell in [app/DESIGN.md](app/DESIGN.md).
 
 **Zusätzliche Voraussetzungen** (nur für die User-Version; die statische App bleibt davon unberührt):
 
-- PHP-Erweiterungen **`php-sqlite3`**, **`php-gd`** und **`php-exif`** (unter Ubuntu/Debian: `sudo apt install php-sqlite3 php-gd php-exif`; `php-exif` ist oft schon in `php-cli`/`php-fpm` enthalten).
+- PHP-Erweiterungen **`php-sqlite3`**, **`php-gd`**, **`php-exif`** und **`php-sodium`** (unter Ubuntu/Debian: `sudo apt install php-sqlite3 php-gd php-exif php-sodium`; `php-exif` und `php-sodium` sind oft schon in `php-cli`/`php-fpm` enthalten). `sodium` wird für die verschlüsselte Ablage der WebDAV-Zugangsdaten und der 2FA-Secrets gebraucht.
 - Einmalig `app/api/config.sample.php` nach `app/api/config.php` kopieren und die Werte anpassen (Schlüssel erzeugen mit `php -r "echo bin2hex(random_bytes(32));"`). `config.php` und das Datenverzeichnis `app/data/` gehören nicht ins Repo.
 - Für den automatischen Cloud-Import einen **Cron-Job** einrichten, der den Poller alle paar Minuten aufruft — per Crontab (`crontab -e`):
 
@@ -93,7 +105,7 @@ Neben der statischen App entsteht unter `/app/` eine Mehrbenutzer-Version mit Ko
 
 ### Als Docker-Container (Alternative zur manuellen Installation)
 
-Statt PHP-Erweiterungen manuell zu installieren, kann die User-Version als fertiges Docker-Image gebaut werden — `php-sqlite3`, `php-gd`, `php-exif` und `sodium` sind darin bereits enthalten, ebenso ein eingebauter Cron für den WebDAV-Poller. Die statische App (`index.html`, `js/`) läuft im selben Container automatisch mit.
+Statt PHP-Erweiterungen manuell zu installieren, kann die User-Version als fertiges Docker-Image gebaut werden (Basis: `php:8.3-apache`) — `php-sqlite3`, `php-gd`, `php-exif` und `sodium` sind darin bereits enthalten, ebenso ein eingebauter Cron für den WebDAV-Poller. Die statische App (`index.html`, `js/`) läuft im selben Container automatisch mit.
 
 ```bash
 docker compose up -d --build
@@ -117,21 +129,24 @@ Der komplette Programmcode liegt in `js/` als ES-Module, eingebunden über `<scr
 | `map-config.js` | Konstanten: Kartenansicht, Layer, Routing-Profile, Bildqualitäten |
 | `map-settings.js` | Nutzereinstellungen (Sprache, Routing, Bildqualität, WebDAV-Zugangsdaten) mit localStorage |
 | `map-i18n.js` | Alle Oberflächentexte auf Deutsch/Englisch |
-| `map-core.js` | Grundkarte, Layer-Steuerung, Routing-Logik |
+| `map-core.js` | Grundkarte, Layer-Steuerung, Routing-Logik, eigener Standort, Track-Modus |
 | `map-pois.js` | Stationen anlegen, nummerieren, sortieren, Erstellungsgesten |
-| `map-ui.js` | Seitenleiste, Anlegen-/Bearbeiten-Dialog, Lightbox, Hilfe, Dateiauswahl |
-| `map-io.js` | GeoJSON-/GPX-Import und -Export, Ein-Datei-HTML- und ZIP-Export |
-| `map-exif.js` | Lesen und Schreiben von EXIF-Metadaten (GPS, Datum) in JPEG-Dateien |
+| `map-ui.js` | Seitenleiste, Anlegen-/Bearbeiten-Dialog, Lightbox, Hilfe, Dateiauswahl, Foto vom Standort |
+| `map-io.js` | GeoJSON-/GPX-Import und -Export, Ein-Datei-HTML-, ZIP- und IMS-Export |
+| `map-exif.js` | Lesen und Schreiben von EXIF-Metadaten (GPS, Datum) in JPEG-/HEIC-Dateien |
+| `map-photos.js` | Lokaler Foto-Import (Dateiauswahl/Drag & Drop) mit EXIF-Platzierung |
 | `map-webdav.js` | Import von Bildern aus einem WebDAV-/Nextcloud-Ordner (spricht mit `webdav-proxy.php`) |
 | `map-utils.js` | Allgemeine Helfer: Dateizugriff, Bildverarbeitung, Downloads, ZIP-Erzeugung |
 
 Einzige Ausnahme von „alles ist statisches JS" ist **`webdav-proxy.php`** im Wurzelverzeichnis: Browser dürfen aus Sicherheitsgründen (CORS) keine Anfragen an einen fremden WebDAV-Server schicken. Das PHP-Skript läuft auf demselben Server wie Tourlocate und reicht die Anfrage serverseitig weiter (dafür gilt CORS nicht) — enthält außerdem Schutzmaßnahmen gegen Missbrauch als offenen Proxy (nur https-Ziele, keine privaten/internen Adressen, Zeit- und Größenlimits).
 
+Die **User-Version** unter `app/` baut auf denselben `js/`-Modulen auf (der Editor bindet sie ein und schaltet per Hook auf serverseitiges Speichern/Hochladen um) und ergänzt eigenen Servercode: ein PHP-API unter `app/api/` (PDO/SQLite, Auth/CSRF, Teilen-Links, Uploads, 2FA, WebDAV), die öffentlichen Seiten `app/view.php` (Tour-Ansicht) und `app/verfolgen.php` (Live-Standort) sowie `app/live-share.js` für das Standort-Teilen. Details dazu in [app/DESIGN.md](app/DESIGN.md).
+
 Es gibt keinen Bundler, keinen Transpiler und kein Test-Framework — Änderungen werden manuell im Browser geprüft. Weitere Details zu Architektur-Entscheidungen und Konventionen stehen in [CLAUDE.md](CLAUDE.md).
 
 ## Verwendete Bibliotheken
 
-[Leaflet](https://leafletjs.com/), [Leaflet Routing Machine](https://github.com/perliedman/leaflet-routing-machine), [Leaflet Control Geocoder](https://github.com/perliedman/leaflet-control-geocoder), [@tmcw/togeojson](https://github.com/placemark/togeojson), [heic2any](https://github.com/alexcorvi/heic2any) — alle über jsDelivr eingebunden, keine lokale Installation nötig.
+[Leaflet](https://leafletjs.com/), [Leaflet Routing Machine](https://github.com/perliedman/leaflet-routing-machine), [Leaflet Control Geocoder](https://github.com/perliedman/leaflet-control-geocoder), [@tmcw/togeojson](https://github.com/placemark/togeojson), [heic2any](https://github.com/alexcorvi/heic2any) — alle über jsDelivr eingebunden, keine lokale Installation nötig. Die User-Version nutzt zusätzlich [qrcode](https://github.com/soldair/node-qrcode) (QR-Code bei der 2FA-Einrichtung).
 
 ## Lizenz
 

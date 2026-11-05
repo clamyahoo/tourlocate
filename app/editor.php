@@ -50,6 +50,9 @@ $csrf = csrf_token();
     #map{ flex:1 1 auto; min-width:0; height:100%; }
     /* WebDAV-Bereich kommt erst in einer späteren Scheibe */
     #secWebdav { display:none; }
+    /* Menü-Knopf unter die Editor-Kopfleiste, damit er den
+       "‹ Übersicht"-Link oben links nicht verdeckt */
+    #sidebarToggle { top:56px; }
   </style>
 </head>
 <body>

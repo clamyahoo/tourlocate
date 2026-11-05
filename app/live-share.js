@@ -22,8 +22,19 @@
   let bannerTimer = null;
   let geoProblem = null;      // Text, falls die Ortung blockiert/fehlt
   let wakeSentinel = null;    // Screen-Wake-Lock (Bildschirm bleibt an)
-  const WAKE_INFO_KEY = 'tlLiveWakeInfoHidden';
+  let lastUpdateAt = null;    // Zeitpunkt des letzten erfolgreichen Pings
+  let collapsed = false;      // Banner eingeklappt (platzsparend)
+  const STALE_MS = 120000;    // ab 2 Min. ohne Update gilt die Position als alt
+  // Hinweis: -v2, damit ein früheres "Ausblenden" einmalig zurückgesetzt wird
+  const WAKE_INFO_KEY = 'tlLiveWakeInfoHidden-v2';
   const listeners = [];
+
+  function agoText(ms) {
+    const s = Math.max(0, Math.round(ms / 1000));
+    if (s < 60) return s + ' Sek.';
+    const m = Math.round(s / 60);
+    return m < 60 ? m + ' Min.' : Math.round(m / 60) + ' Std.';
+  }
 
   async function api(action, body) {
     const opts = { headers: { 'X-CSRF-Token': CSRF } };
@@ -52,14 +63,16 @@
     if (document.getElementById('tlLiveWrap')) return;
     const style = document.createElement('style');
     style.textContent =
-      '#tlLiveWrap{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:100000;' +
+      '#tlLiveWrap{position:fixed;bottom:54px;left:50%;transform:translateX(-50%);z-index:100000;' +
       'display:flex;flex-direction:column;gap:6px;align-items:center;max-width:92vw}' +
-      '#tlLiveBanner{display:flex;align-items:center;gap:10px;background:#1a1a1a;color:#fff;border-radius:22px;' +
+      '#tlLiveBanner{display:flex;align-items:center;gap:8px;background:#1a1a1a;color:#fff;border-radius:22px;' +
       'padding:8px 14px;font:13px/1.2 system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:100%}' +
       '#tlLiveBanner .tlLiveDot{width:10px;height:10px;border-radius:50%;background:#e53e3e;flex:0 0 auto;' +
       'animation:tlLivePulse 1.4s ease-in-out infinite}' +
       '#tlLiveBanner button{background:#fff;color:#1a1a1a;border:0;border-radius:14px;padding:5px 12px;' +
       'font:inherit;font-weight:600;cursor:pointer;flex:0 0 auto}' +
+      '#tlLiveBanner #tlLiveToggle{background:rgba(255,255,255,.18);color:#fff;border-radius:12px;' +
+      'padding:4px 9px;line-height:1}' +
       '#tlLiveBanner .tlLiveMsg{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
       '#tlLiveWakeInfo{display:flex;align-items:flex-start;gap:8px;background:#fff7ed;color:#92400e;' +
       'border:1px solid #fed7aa;border-radius:14px;padding:7px 12px;font:12px/1.35 system-ui,sans-serif;' +
@@ -77,6 +90,7 @@
     b.style.display = 'none';
     b.innerHTML = '<span class="tlLiveDot"></span>'
       + '<span class="tlLiveMsg" id="tlLiveMsg">Du teilst gerade deinen Standort</span>'
+      + '<button id="tlLiveToggle" type="button" title="Ein-/ausklappen" aria-label="Ein-/ausklappen">▾</button>'
       + '<button id="tlLiveStop" type="button">Beenden</button>';
 
     const info = document.createElement('div');
@@ -90,6 +104,7 @@
     wrap.appendChild(info);
     document.body.appendChild(wrap);
     b.querySelector('#tlLiveStop').onclick = () => { window.TLLiveShare.stop(); };
+    b.querySelector('#tlLiveToggle').onclick = () => { collapsed = !collapsed; updateBanner(); };
     info.querySelector('#tlLiveWakeHide').onclick = () => {
       hideWakeInfo();
       try { localStorage.setItem(WAKE_INFO_KEY, '1'); } catch (e) {}
@@ -99,9 +114,26 @@
   function updateBanner() {
     const msg = document.getElementById('tlLiveMsg');
     if (!msg) return;
+    const toggle = document.getElementById('tlLiveToggle');
+    const stop = document.getElementById('tlLiveStop');
+    if (toggle) toggle.textContent = collapsed ? '▸' : '▾';
+    if (stop) stop.style.display = collapsed ? 'none' : '';
+
+    const age = lastUpdateAt != null ? Date.now() - lastUpdateAt : null;
+    const stale = age != null && age > STALE_MS;
+    // "zuletzt aktualisiert" hat Vorrang vor der Restlaufzeit
+    const fresh = geoProblem ? null
+      : (age != null ? (stale ? '⚠️ zuletzt vor ' : 'aktualisiert vor ') + agoText(age)
+                     : 'warte auf Position…');
+
+    if (collapsed) {
+      // Platzsparend: nur der kürzeste Frische-Hinweis
+      msg.textContent = geoProblem ? '⚠️' : (age != null ? 'vor ' + agoText(age) : '…');
+      return;
+    }
     if (geoProblem) { msg.textContent = '⚠️ ' + geoProblem; return; }
     const r = remainingText();
-    msg.textContent = 'Du teilst gerade deinen Standort' + (r ? ' (' + r + ')' : '');
+    msg.textContent = 'Standort geteilt · ' + fresh + (r ? ' · ' + r : '');
   }
 
   function showBanner() {
@@ -175,7 +207,9 @@
       lng: pos.coords.longitude,
       acc: pos.coords.accuracy
     });
-    if (d && d.active === false) onEnded(); // serverseitig beendet/abgelaufen
+    if (d && d.active === false) { onEnded(); return; } // serverseitig beendet
+    lastUpdateAt = Date.now();
+    updateBanner();
   }
 
   function onGeoError(err) {
@@ -200,6 +234,7 @@
   function begin(tok, exp) {
     token = tok;
     expiresAt = exp;
+    lastUpdateAt = null;
     showBanner();
     startWatch();
     requestWake();
@@ -210,6 +245,7 @@
     token = null;
     expiresAt = null;
     geoProblem = null;
+    lastUpdateAt = null;
     stopWatch();
     releaseWake();
     hideBanner();

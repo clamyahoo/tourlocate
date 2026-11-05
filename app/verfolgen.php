@@ -126,6 +126,14 @@ $heading = $label !== '' ? $label : 'Live-Standort';
     if (firstFix){ map.setView(ll, 16); firstFix=false; }
   }
 
+  // Punkt + Kreis entfernen (wenn das Teilen endet, soll keine Position
+  // mehr auf der Karte stehenbleiben)
+  function clearDot(){
+    if (dot){ map.removeLayer(dot); dot=null; }
+    if (ring){ map.removeLayer(ring); ring=null; }
+    firstFix=true;
+  }
+
   async function poll(){
     try {
       var res = await fetch('api/live.php?action=read&t=' + encodeURIComponent(TOKEN), {cache:'no-store'});
@@ -137,6 +145,7 @@ $heading = $label !== '' ? $label : 'Live-Standort';
       }
       if (!d.active){
         activeState = false;
+        clearDot();
         setPill(d.expired ? 'Teilen abgelaufen.' : 'Teilen beendet.', 'off');
         return;
       }

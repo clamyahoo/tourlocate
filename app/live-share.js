@@ -23,10 +23,12 @@
   let geoProblem = null;      // Text, falls die Ortung blockiert/fehlt
   let wakeSentinel = null;    // Screen-Wake-Lock (Bildschirm bleibt an)
   let lastUpdateAt = null;    // Zeitpunkt des letzten erfolgreichen Pings
-  let collapsed = false;      // Banner eingeklappt (platzsparend)
+  let collapsed = true;       // Banner startet eingeklappt (platzsparend)
   const STALE_MS = 120000;    // ab 2 Min. ohne Update gilt die Position als alt
-  // Hinweis: -v2, damit ein früheres "Ausblenden" einmalig zurückgesetzt wird
-  const WAKE_INFO_KEY = 'tlLiveWakeInfoHidden-v2';
+  // Wake-Info wird PRO Sitzung (Token) ausgeblendet, nicht für immer — bei
+  // einer neuen Teilen-Sitzung erscheint sie wieder (so bleibt sie als
+  // Erinnerung nützlich, lässt sich aber im laufenden Teilen wegklicken).
+  const WAKE_DISMISS_KEY = 'tlLiveWakeDismissToken';
   const listeners = [];
 
   function agoText(ms) {
@@ -63,11 +65,12 @@
     if (document.getElementById('tlLiveWrap')) return;
     const style = document.createElement('style');
     style.textContent =
-      '#tlLiveWrap{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:100000;' +
-      'display:flex;flex-direction:column;gap:6px;align-items:center;max-width:92vw}' +
+      '#tlLiveWrap{position:fixed;top:10px;left:58px;z-index:100000;' +
+      'display:flex;flex-direction:column;gap:6px;align-items:flex-start;max-width:calc(100vw - 68px)}' +
       '#tlLiveBanner{display:flex;align-items:center;gap:8px;background:#1a1a1a;color:#fff;border-radius:22px;' +
       'padding:8px 14px;font:13px/1.3 system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:100%;' +
       'touch-action:none;cursor:move;user-select:none;-webkit-user-select:none}' +
+      '#tlLiveBanner.tlVert{flex-direction:column;gap:6px;padding:10px;border-radius:18px;text-align:center}' +
       '#tlLiveBanner .tlLiveDot{width:10px;height:10px;border-radius:50%;background:#e53e3e;flex:0 0 auto;' +
       'animation:tlLivePulse 1.4s ease-in-out infinite}' +
       '#tlLiveBanner button{background:#fff;color:#1a1a1a;border:0;border-radius:14px;padding:5px 12px;' +
@@ -108,7 +111,7 @@
     b.querySelector('#tlLiveToggle').onclick = () => { collapsed = !collapsed; updateBanner(); };
     info.querySelector('#tlLiveWakeHide').onclick = () => {
       hideWakeInfo();
-      try { localStorage.setItem(WAKE_INFO_KEY, '1'); } catch (e) {}
+      try { if (token) localStorage.setItem(WAKE_DISMISS_KEY, token); } catch (e) {}
     };
 
     positionBelowBar();
@@ -116,9 +119,9 @@
     window.addEventListener('resize', positionBelowBar);
   }
 
-  // Standardposition: oben-mittig, direkt unter der Kopfleiste der Seite
-  // (Editor #tl-editbar / Dashboard .bar). Nicht überschreiben, wenn der
-  // Nutzer das Banner von Hand verschoben hat.
+  // Standardposition: oben links (neben dem ☰-Knopf), direkt unter der
+  // Kopfleiste der Seite (Editor #tl-editbar / Dashboard .bar). Nicht
+  // überschreiben, wenn der Nutzer das Banner von Hand verschoben hat.
   function positionBelowBar() {
     const wrap = document.getElementById('tlLiveWrap');
     if (!wrap || wrap.dataset.moved) return;
@@ -158,7 +161,16 @@
       wrap.style.left = nx + 'px';
       wrap.style.top = ny + 'px';
     });
-    const end = (e) => { dragging = false; try { handle.releasePointerCapture(e.pointerId); } catch (_) {} };
+    const end = (e) => {
+      dragging = false;
+      try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+      // An eine Seite geschoben? Dann (eingeklappt) vertikal darstellen.
+      const r = wrap.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      wrap.dataset.dock = cx < window.innerWidth * 0.15 ? 'left'
+                        : cx > window.innerWidth * 0.85 ? 'right' : '';
+      updateBanner();
+    };
     handle.addEventListener('pointerup', end);
     handle.addEventListener('pointercancel', end);
   }
@@ -168,6 +180,17 @@
     if (!msg) return;
     const toggle = document.getElementById('tlLiveToggle');
     const stop = document.getElementById('tlLiveStop');
+    const banner = msg.parentElement;
+    const wrap = document.getElementById('tlLiveWrap');
+    const docked = wrap ? wrap.dataset.dock : '';
+    // Vertikal nur in der eingeklappten Pille, wenn an eine Seite geschoben
+    const vertical = collapsed && (docked === 'left' || docked === 'right');
+    if (banner) {
+      banner.classList.toggle('tlVert', vertical);
+      // Eingeklappt/vertikal: schmale Pille; aufgeklappt feste, breitere
+      // Box (sonst bricht der Text in viele Zeilen um).
+      banner.style.width = (collapsed || vertical) ? 'auto' : 'min(360px, calc(100vw - 68px))';
+    }
     if (toggle) toggle.textContent = collapsed ? '▸' : '▾';
     if (stop) stop.style.display = collapsed ? 'none' : '';
     // Aufgeklappt umbrechen lassen, damit auch die Restlaufzeit sichtbar
@@ -214,7 +237,7 @@
 
   // ---- Wake-Lock (Bildschirm bleibt an) ------------------------------
   function wakeInfoDismissed() {
-    try { return localStorage.getItem(WAKE_INFO_KEY) === '1'; } catch (e) { return false; }
+    try { return !!token && localStorage.getItem(WAKE_DISMISS_KEY) === token; } catch (e) { return false; }
   }
 
   function showWakeInfo() {

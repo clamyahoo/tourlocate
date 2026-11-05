@@ -63,10 +63,11 @@
     if (document.getElementById('tlLiveWrap')) return;
     const style = document.createElement('style');
     style.textContent =
-      '#tlLiveWrap{position:fixed;bottom:54px;left:50%;transform:translateX(-50%);z-index:100000;' +
+      '#tlLiveWrap{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:100000;' +
       'display:flex;flex-direction:column;gap:6px;align-items:center;max-width:92vw}' +
       '#tlLiveBanner{display:flex;align-items:center;gap:8px;background:#1a1a1a;color:#fff;border-radius:22px;' +
-      'padding:8px 14px;font:13px/1.2 system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:100%}' +
+      'padding:8px 14px;font:13px/1.3 system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:100%;' +
+      'touch-action:none;cursor:move;user-select:none;-webkit-user-select:none}' +
       '#tlLiveBanner .tlLiveDot{width:10px;height:10px;border-radius:50%;background:#e53e3e;flex:0 0 auto;' +
       'animation:tlLivePulse 1.4s ease-in-out infinite}' +
       '#tlLiveBanner button{background:#fff;color:#1a1a1a;border:0;border-radius:14px;padding:5px 12px;' +
@@ -109,6 +110,57 @@
       hideWakeInfo();
       try { localStorage.setItem(WAKE_INFO_KEY, '1'); } catch (e) {}
     };
+
+    positionBelowBar();
+    makeDraggable(wrap, b);
+    window.addEventListener('resize', positionBelowBar);
+  }
+
+  // Standardposition: oben-mittig, direkt unter der Kopfleiste der Seite
+  // (Editor #tl-editbar / Dashboard .bar). Nicht überschreiben, wenn der
+  // Nutzer das Banner von Hand verschoben hat.
+  function positionBelowBar() {
+    const wrap = document.getElementById('tlLiveWrap');
+    if (!wrap || wrap.dataset.moved) return;
+    const bar = document.querySelector('#tl-editbar, .bar, #bar');
+    let top = 10;
+    if (bar) {
+      const r = bar.getBoundingClientRect();
+      if (r.bottom > 0 && r.bottom < 200) top = Math.round(r.bottom + 8);
+    }
+    wrap.style.top = top + 'px';
+    wrap.style.bottom = 'auto';
+  }
+
+  // Banner von Hand verschiebbar (Zeiger-Events = Touch + Maus). Buttons
+  // bleiben klickbar; ab dem ersten Ziehen gilt die Position als "gesetzt".
+  function makeDraggable(wrap, handle) {
+    let dragging = false, sx = 0, sy = 0, ox = 0, oy = 0;
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;
+      const r = wrap.getBoundingClientRect();
+      ox = r.left; oy = r.top; sx = e.clientX; sy = e.clientY;
+      wrap.style.left = r.left + 'px';
+      wrap.style.top = r.top + 'px';
+      wrap.style.transform = 'none';
+      wrap.style.bottom = 'auto';
+      wrap.dataset.moved = '1';
+      dragging = true;
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      let nx = ox + (e.clientX - sx);
+      let ny = oy + (e.clientY - sy);
+      nx = Math.max(4, Math.min(window.innerWidth - wrap.offsetWidth - 4, nx));
+      ny = Math.max(4, Math.min(window.innerHeight - wrap.offsetHeight - 4, ny));
+      wrap.style.left = nx + 'px';
+      wrap.style.top = ny + 'px';
+    });
+    const end = (e) => { dragging = false; try { handle.releasePointerCapture(e.pointerId); } catch (_) {} };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
   }
 
   function updateBanner() {
@@ -118,6 +170,10 @@
     const stop = document.getElementById('tlLiveStop');
     if (toggle) toggle.textContent = collapsed ? '▸' : '▾';
     if (stop) stop.style.display = collapsed ? 'none' : '';
+    // Aufgeklappt umbrechen lassen, damit auch die Restlaufzeit sichtbar
+    // bleibt (einzeilig würde sie hinter "…" abgeschnitten); eingeklappt
+    // einzeilig für die kompakte Pille.
+    msg.style.whiteSpace = collapsed ? 'nowrap' : 'normal';
 
     const age = lastUpdateAt != null ? Date.now() - lastUpdateAt : null;
     const stale = age != null && age > STALE_MS;

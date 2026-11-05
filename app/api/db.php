@@ -157,6 +157,27 @@ function tl_migrate(PDO $pdo): void
         );
     SQL);
 
+    // Live-Standort-Teilen: pro Sitzung ein unerratbarer Token (wie
+    // share_token), ein öffentlicher Link zeigt die zuletzt gemeldete
+    // Position. Bewusst NUR die letzte Position pro Zeile — keine
+    // Bewegungshistorie auf dem Server. Pflicht-Ablauf (expires_at),
+    // jederzeit abschaltbar (active = 0).
+    $pdo->exec(<<<'SQL'
+        CREATE TABLE IF NOT EXISTS live_shares (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            token      TEXT UNIQUE NOT NULL,
+            label      TEXT,
+            last_lat   REAL,
+            last_lng   REAL,
+            last_acc   REAL,
+            last_at    TEXT,
+            expires_at TEXT NOT NULL,
+            active     INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
+    SQL);
+
     $pdo->exec(<<<'SQL'
         CREATE TABLE IF NOT EXISTS webdav_connections (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,

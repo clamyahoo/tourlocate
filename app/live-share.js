@@ -21,6 +21,8 @@
   let lastPing = 0;            // Drossel: höchstens alle 3 Sek. senden
   let bannerTimer = null;
   let geoProblem = null;      // Text, falls die Ortung blockiert/fehlt
+  let wakeSentinel = null;    // Screen-Wake-Lock (Bildschirm bleibt an)
+  const WAKE_INFO_KEY = 'tlLiveWakeInfoHidden';
   const listeners = [];
 
   async function api(action, body) {
@@ -47,19 +49,28 @@
 
   // ---- Schwebender Hinweis -------------------------------------------
   function ensureBanner() {
-    if (document.getElementById('tlLiveBanner')) return;
+    if (document.getElementById('tlLiveWrap')) return;
     const style = document.createElement('style');
     style.textContent =
-      '#tlLiveBanner{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:100000;' +
-      'display:flex;align-items:center;gap:10px;background:#1a1a1a;color:#fff;border-radius:22px;' +
-      'padding:8px 14px;font:13px/1.2 system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:92vw}' +
+      '#tlLiveWrap{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:100000;' +
+      'display:flex;flex-direction:column;gap:6px;align-items:center;max-width:92vw}' +
+      '#tlLiveBanner{display:flex;align-items:center;gap:10px;background:#1a1a1a;color:#fff;border-radius:22px;' +
+      'padding:8px 14px;font:13px/1.2 system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:100%}' +
       '#tlLiveBanner .tlLiveDot{width:10px;height:10px;border-radius:50%;background:#e53e3e;flex:0 0 auto;' +
       'animation:tlLivePulse 1.4s ease-in-out infinite}' +
       '#tlLiveBanner button{background:#fff;color:#1a1a1a;border:0;border-radius:14px;padding:5px 12px;' +
       'font:inherit;font-weight:600;cursor:pointer;flex:0 0 auto}' +
       '#tlLiveBanner .tlLiveMsg{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '#tlLiveWakeInfo{display:flex;align-items:flex-start;gap:8px;background:#fff7ed;color:#92400e;' +
+      'border:1px solid #fed7aa;border-radius:14px;padding:7px 12px;font:12px/1.35 system-ui,sans-serif;' +
+      'box-shadow:0 2px 10px rgba(0,0,0,.15);max-width:100%}' +
+      '#tlLiveWakeInfo button{background:none;border:0;color:#92400e;text-decoration:underline;cursor:pointer;' +
+      'font:inherit;flex:0 0 auto;padding:0;white-space:nowrap}' +
       '@keyframes tlLivePulse{0%,100%{opacity:1}50%{opacity:.25}}';
     document.head.appendChild(style);
+
+    const wrap = document.createElement('div');
+    wrap.id = 'tlLiveWrap';
 
     const b = document.createElement('div');
     b.id = 'tlLiveBanner';
@@ -67,8 +78,22 @@
     b.innerHTML = '<span class="tlLiveDot"></span>'
       + '<span class="tlLiveMsg" id="tlLiveMsg">Du teilst gerade deinen Standort</span>'
       + '<button id="tlLiveStop" type="button">Beenden</button>';
-    document.body.appendChild(b);
+
+    const info = document.createElement('div');
+    info.id = 'tlLiveWakeInfo';
+    info.style.display = 'none';
+    info.innerHTML = '<span>Wake-Lock aktiv: Bildschirm wird nicht automatisch gesperrt oder gedimmt. '
+      + 'Bei Bildschirmsperre von Hand oder App-Wechsel stoppt die automatische Aktualisierung.</span>'
+      + '<button id="tlLiveWakeHide" type="button">Ausblenden</button>';
+
+    wrap.appendChild(b);
+    wrap.appendChild(info);
+    document.body.appendChild(wrap);
     b.querySelector('#tlLiveStop').onclick = () => { window.TLLiveShare.stop(); };
+    info.querySelector('#tlLiveWakeHide').onclick = () => {
+      hideWakeInfo();
+      try { localStorage.setItem(WAKE_INFO_KEY, '1'); } catch (e) {}
+    };
   }
 
   function updateBanner() {
@@ -97,6 +122,44 @@
     const b = document.getElementById('tlLiveBanner');
     if (b) b.style.display = 'none';
     if (bannerTimer) { clearInterval(bannerTimer); bannerTimer = null; }
+  }
+
+  // ---- Wake-Lock (Bildschirm bleibt an) ------------------------------
+  function wakeInfoDismissed() {
+    try { return localStorage.getItem(WAKE_INFO_KEY) === '1'; } catch (e) { return false; }
+  }
+
+  function showWakeInfo() {
+    if (wakeInfoDismissed()) return;
+    ensureBanner();
+    const el = document.getElementById('tlLiveWakeInfo');
+    if (el) el.style.display = 'flex';
+  }
+
+  function hideWakeInfo() {
+    const el = document.getElementById('tlLiveWakeInfo');
+    if (el) el.style.display = 'none';
+  }
+
+  async function requestWake() {
+    if (!('wakeLock' in navigator) || wakeSentinel || !token) return;
+    if (document.visibilityState !== 'visible') return;
+    try {
+      wakeSentinel = await navigator.wakeLock.request('screen');
+      // Das System gibt die Sperre bei App-Wechsel/Sperre selbst frei
+      wakeSentinel.addEventListener('release', () => { wakeSentinel = null; });
+      showWakeInfo();
+    } catch (e) {
+      wakeSentinel = null; // z. B. bei niedrigem Akku abgelehnt — still ignorieren
+    }
+  }
+
+  async function releaseWake() {
+    hideWakeInfo();
+    if (wakeSentinel) {
+      try { await wakeSentinel.release(); } catch (e) {}
+      wakeSentinel = null;
+    }
   }
 
   // ---- Ortung ---------------------------------------------------------
@@ -139,6 +202,7 @@
     expiresAt = exp;
     showBanner();
     startWatch();
+    requestWake();
     emit();
   }
 
@@ -147,9 +211,16 @@
     expiresAt = null;
     geoProblem = null;
     stopWatch();
+    releaseWake();
     hideBanner();
     emit();
   }
+
+  // Wird die Seite wieder sichtbar, die Wake-Lock erneut anfordern
+  // (das System hat sie beim Wechsel/Sperre freigegeben).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && token) requestWake();
+  });
 
   // ---- Öffentliche API ------------------------------------------------
   window.TLLiveShare = {

@@ -80,8 +80,9 @@
       '#tlLiveWakeInfo{display:flex;align-items:flex-start;gap:8px;background:#fff7ed;color:#92400e;' +
       'border:1px solid #fed7aa;border-radius:14px;padding:7px 12px;font:12px/1.35 system-ui,sans-serif;' +
       'box-shadow:0 2px 10px rgba(0,0,0,.15);max-width:100%}' +
+      '#tlLiveWakeInfo>span{flex:1 1 auto;min-width:0}' +
       '#tlLiveWakeInfo button{background:none;border:0;color:#92400e;text-decoration:underline;cursor:pointer;' +
-      'font:inherit;flex:0 0 auto;padding:0;text-align:left}' +
+      'font:inherit;flex:0 0 auto;padding:0;text-align:left;white-space:normal;max-width:120px}' +
       '@keyframes tlLivePulse{0%,100%{opacity:1}50%{opacity:.25}}';
     document.head.appendChild(style);
 

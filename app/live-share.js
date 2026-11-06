@@ -8,8 +8,9 @@
 //   onChange(fn)      – fn(state) bei jedem Zustandswechsel
 //   start(label,ttl)  – Sitzung starten (gibt die API-Antwort zurück)
 //   stop()            – Teilen beenden
+//   pause()/resume()  – Senden pausieren / fortsetzen (Sitzung bleibt aktiv)
 //   extend(ttl)       – laufende Sitzung verlängern
-//   getState()        – { active, token, expiresAt }
+//   getState()        – { active, token, expiresAt, paused }
 //   urlFor(token)     – absolute verfolgen.php-URL
 
 (function () {
@@ -23,6 +24,7 @@
   let geoProblem = null;      // Text, falls die Ortung blockiert/fehlt
   let wakeSentinel = null;    // Screen-Wake-Lock (Bildschirm bleibt an)
   let lastUpdateAt = null;    // Zeitpunkt des letzten erfolgreichen Pings
+  let paused = false;         // Teilen pausiert (Sitzung aktiv, aber kein Senden)
   let collapsed = true;       // Banner startet eingeklappt (platzsparend)
   const STALE_MS = 120000;    // ab 2 Min. ohne Update gilt die Position als alt
   // Wake-Info wird PRO Sitzung (Token) ausgeblendet, nicht für immer — bei
@@ -49,7 +51,7 @@
     return res.json().catch(() => ({}));
   }
 
-  function getState() { return { active: !!token, token, expiresAt }; }
+  function getState() { return { active: !!token, token, expiresAt, paused }; }
   function emit() { const s = getState(); listeners.forEach(fn => { try { fn(s); } catch (e) {} }); }
 
   function remainingText() {
@@ -95,6 +97,7 @@
     b.innerHTML = '<span class="tlLiveDot"></span>'
       + '<span class="tlLiveMsg" id="tlLiveMsg">Du teilst gerade deinen Standort</span>'
       + '<button id="tlLiveToggle" type="button" title="Ein-/ausklappen" aria-label="Ein-/ausklappen">▾</button>'
+      + '<button id="tlLivePause" type="button">Pause</button>'
       + '<button id="tlLiveStop" type="button">Beenden</button>';
 
     const info = document.createElement('div');
@@ -109,6 +112,7 @@
     wrap.appendChild(info);
     document.body.appendChild(wrap);
     b.querySelector('#tlLiveStop').onclick = () => { window.TLLiveShare.stop(); };
+    b.querySelector('#tlLivePause').onclick = () => { paused ? window.TLLiveShare.resume() : window.TLLiveShare.pause(); };
     b.querySelector('#tlLiveToggle').onclick = () => { collapsed = !collapsed; updateBanner(); };
     info.querySelector('#tlLiveWakeHide').onclick = () => {
       hideWakeInfo();
@@ -172,7 +176,9 @@
     if (!msg) return;
     const toggle = document.getElementById('tlLiveToggle');
     const stop = document.getElementById('tlLiveStop');
+    const pauseBtn = document.getElementById('tlLivePause');
     const banner = msg.parentElement;
+    const dot = banner ? banner.querySelector('.tlLiveDot') : null;
     if (banner) {
       // Eingeklappt: schmale Pille; aufgeklappt feste, breitere Box
       // (sonst bricht der Text in viele Zeilen um).
@@ -180,10 +186,19 @@
     }
     if (toggle) toggle.textContent = collapsed ? '▸' : '▾';
     if (stop) stop.style.display = collapsed ? 'none' : '';
+    if (pauseBtn) { pauseBtn.style.display = collapsed ? 'none' : ''; pauseBtn.textContent = paused ? 'Fortsetzen' : 'Pause'; }
+    // Punkt im Pause-Zustand grau + ruhig, sonst rot pulsierend
+    if (dot) { dot.style.background = paused ? '#9ca3af' : '#e53e3e'; dot.style.animationPlayState = paused ? 'paused' : 'running'; }
     // Aufgeklappt umbrechen lassen, damit auch die Restlaufzeit sichtbar
     // bleibt (einzeilig würde sie hinter "…" abgeschnitten); eingeklappt
     // einzeilig für die kompakte Pille.
     msg.style.whiteSpace = collapsed ? 'nowrap' : 'normal';
+
+    if (paused) {
+      const r = remainingText();
+      msg.textContent = collapsed ? '⏸ pausiert' : ('Teilen pausiert' + (r ? ' · ' + r : ''));
+      return;
+    }
 
     const age = lastUpdateAt != null ? Date.now() - lastUpdateAt : null;
     const stale = age != null && age > STALE_MS;
@@ -297,13 +312,13 @@
     if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
   }
 
-  function begin(tok, exp) {
+  function begin(tok, exp, isPaused) {
     token = tok;
     expiresAt = exp;
+    paused = !!isPaused;
     lastUpdateAt = null;
     showBanner();
-    startWatch();
-    requestWake();
+    if (!paused) { startWatch(); requestWake(); }
     emit();
   }
 
@@ -312,6 +327,7 @@
     expiresAt = null;
     geoProblem = null;
     lastUpdateAt = null;
+    paused = false;
     stopWatch();
     releaseWake();
     hideBanner();
@@ -341,6 +357,27 @@
       onEnded();
     },
 
+    async pause() {
+      if (!token || paused) return;
+      if (token) { try { await api('pause', { token }); } catch (e) {} }
+      paused = true;
+      stopWatch();
+      releaseWake();
+      updateBanner();
+      emit();
+    },
+
+    async resume() {
+      if (!token || !paused) return;
+      if (token) { try { await api('resume', { token }); } catch (e) {} }
+      paused = false;
+      lastPing = 0;
+      startWatch();
+      requestWake();
+      updateBanner();
+      emit();
+    },
+
     async extend(ttl) {
       const d = await api('extend', { ttl });
       if (d.ok) { expiresAt = d.expiresAt; updateBanner(); emit(); }
@@ -351,6 +388,6 @@
   // Beim Laden: läuft noch eine Sitzung? Dann Hinweis + Ortung fortsetzen.
   (async () => {
     const d = await api('status');
-    if (d && d.ok && d.share) begin(d.share.token, d.share.expiresAt);
+    if (d && d.ok && d.share) begin(d.share.token, d.share.expiresAt, d.share.paused);
   })();
 })();

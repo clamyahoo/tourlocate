@@ -111,6 +111,7 @@ $csrf = csrf_token();
                style="flex:1 1 220px;padding:9px;border:1px solid #cbd2d9;border-radius:7px;font:inherit;background:#f7f9fb">
         <button id="liveCopyBtn">Kopieren</button>
         <button id="liveShareBtn" style="display:none">Teilen</button>
+        <button id="livePreviewBtn">Ansicht öffnen</button>
         <button class="danger" id="liveStopBtn">Teilen beenden</button>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
@@ -474,6 +475,14 @@ document.getElementById('liveCopyBtn').onclick = async () => {
 document.getElementById('liveShareBtn').onclick = async () => {
   try { await navigator.share({ title: 'Mein Live-Standort', url: liveUrlInp.value }); }
   catch (e) { /* Nutzer hat abgebrochen — ignorieren */ }
+};
+
+// Dieselbe Ansicht wie der Empfänger (mit Zurück-Link). Hinweis: Während
+// man hier ist, pausiert das Senden der eigenen Position — beim Zurück
+// kehren zum Dashboard läuft es automatisch wieder an.
+document.getElementById('livePreviewBtn').onclick = () => {
+  const st = TLLiveShare.getState();
+  if (st.active) location.href = TLLiveShare.urlFor(st.token) + '&preview=1';
 };
 </script>
 </body>

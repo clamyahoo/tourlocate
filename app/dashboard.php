@@ -159,7 +159,10 @@ $csrf = csrf_token();
       (z. B. Aegis, FreeOTP, Google Authenticator) oder gib das Secret von Hand ein.
       Bestätige dann mit einem aktuellen Code.</p>
       <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
-        <canvas id="twofaQr" width="180" height="180" style="border:1px solid #e2e8f0;border-radius:8px"></canvas>
+        <div style="width:180px;height:180px;border:1px solid #e2e8f0;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden">
+          <img id="twofaQr" alt="QR-Code" style="width:100%;height:100%;image-rendering:pixelated;display:none">
+          <span id="twofaQrFallback" style="display:none;font-size:12px;color:#92400e;text-align:center;padding:8px">QR-Code konnte nicht geladen werden. Bitte das Secret rechts von Hand in der App eingeben.</span>
+        </div>
         <div style="min-width:220px">
           <div style="font-size:12px;color:#667">Secret (manuelle Eingabe):</div>
           <code id="twofaSecret" style="font-size:13px;user-select:all;word-break:break-all"></code>
@@ -181,7 +184,7 @@ $csrf = csrf_token();
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js" defer></script>
 <script>window.TL_LIVE_CSRF = <?= json_encode($csrf) ?>;</script>
 <script src="live-share.js"></script>
 <script>
@@ -325,11 +328,25 @@ enableBtn.onclick = async () => {
   if (!s.ok) { msg.textContent = s.error || 'Fehler.'; return; }
   document.getElementById('twofaSetup').style.display = 'block';
   document.getElementById('twofaSecret').textContent = s.secret.replace(/(.{4})/g, '$1 ').trim();
-  // QR zeichnen; wenn die CDN-Bibliothek fehlt, bleibt die manuelle Eingabe
-  if (window.QRCode) {
-    QRCode.toCanvas(document.getElementById('twofaQr'), s.uri, { width: 180, margin: 1 });
-  } else {
-    document.getElementById('twofaQr').style.display = 'none';
+  // QR aus der otpauth-URI zeichnen (qrcode-generator). Scheitert die
+  // Bibliothek, bleibt die manuelle Secret-Eingabe als Fallback.
+  const qrImg = document.getElementById('twofaQr');
+  const qrFallback = document.getElementById('twofaQrFallback');
+  let drawn = false;
+  if (window.qrcode) {
+    try {
+      const qr = qrcode(0, 'M');      // Typ 0 = automatisch, Fehlerkorrektur M
+      qr.addData(s.uri);
+      qr.make();
+      qrImg.src = qr.createDataURL(6, 8); // Zellgröße, Rand
+      qrImg.style.display = '';
+      qrFallback.style.display = 'none';
+      drawn = true;
+    } catch (e) { /* unten Fallback */ }
+  }
+  if (!drawn) {
+    qrImg.style.display = 'none';
+    qrFallback.style.display = '';
   }
   document.getElementById('twofaCode').focus();
 };

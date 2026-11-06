@@ -109,6 +109,12 @@ function tl_migrate(PDO $pdo): void
             // Spalte existiert bereits — ok (oder reports noch nicht da → unten erstellt)
         }
     }
+    // live_shares: Pause-Flag (bestehende DBs; frische bekommen es im CREATE)
+    try {
+        $pdo->exec('ALTER TABLE live_shares ADD COLUMN paused INTEGER NOT NULL DEFAULT 0');
+    } catch (PDOException $e) {
+        // Spalte existiert bereits oder Tabelle noch nicht da — ok
+    }
 
     // Audit-Log: protokolliert Admin-Zugriffe auf fremde Inhalte (wer,
     // wann, was) — Beleg für anlassbezogene statt wahlloser Einsicht.
@@ -197,6 +203,7 @@ function tl_migrate(PDO $pdo): void
             last_at    TEXT,
             expires_at TEXT NOT NULL,
             active     INTEGER NOT NULL DEFAULT 1,
+            paused     INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL
         );
     SQL);

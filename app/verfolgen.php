@@ -29,6 +29,9 @@ if (!$P) {
 
 $label = (string) ($P['label'] ?? '');
 $heading = $label !== '' ? $label : 'Live-Standort';
+// ?preview=1 → der Teilende schaut sich selbst die Ansicht an; dann einen
+// Zurück-Link zum Dashboard zeigen (Betrachter mit dem Link sehen ihn nicht).
+$preview = isset($_GET['preview']);
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -54,8 +57,11 @@ $heading = $label !== '' ? $label : 'Live-Standort';
 </head>
 <body>
 <div id="bar">
+<?php if ($preview): ?>
+  <a href="dashboard.php" style="font-size:14px;color:#2b6cb0;white-space:nowrap;text-decoration:none;font-weight:600">‹ Zurück</a>
+<?php endif; ?>
   <img src="../img/logo.png" alt="" onerror="this.style.display='none'">
-  <strong><?= htmlspecialchars($heading, ENT_QUOTES) ?></strong>
+  <strong><?= htmlspecialchars($heading, ENT_QUOTES) ?><?= $preview ? ' (Vorschau)' : '' ?></strong>
   <a href="impressum.php" style="font-size:12px;color:#888;white-space:nowrap">Impressum</a>
 </div>
 <div id="map"></div>
@@ -113,6 +119,7 @@ $heading = $label !== '' ? $label : 'Live-Standort';
 
   var lastAt = null;
   var activeState = false;
+  var pausedState = false;
 
   function place(lat, lng, acc){
     var ll = [lat, lng];
@@ -150,6 +157,14 @@ $heading = $label !== '' ? $label : 'Live-Standort';
         return;
       }
       activeState = true;
+      pausedState = !!d.paused;
+      if (d.paused){
+        // Sofort "pausiert" anzeigen (nicht erst nach der Veraltet-Schwelle)
+        if (d.lat != null && d.lng != null){ place(d.lat, d.lng, d.acc); lastAt = d.at; }
+        setDotStale(true);
+        setPill('⏸ Teilen pausiert', 'off');
+        return;
+      }
       if (d.lat != null && d.lng != null){
         place(d.lat, d.lng, d.acc);
         lastAt = d.at;
@@ -164,8 +179,9 @@ $heading = $label !== '' ? $label : 'Live-Standort';
 
   poll();
   setInterval(poll, 5000);
-  // Sekundentakt nur für die Frische-Anzeige (ohne neue Anfrage)
-  setInterval(function(){ if (activeState && lastAt) renderFreshness(lastAt); }, 1000);
+  // Sekundentakt nur für die Frische-Anzeige (ohne neue Anfrage);
+  // im Pause-Zustand nicht überschreiben.
+  setInterval(function(){ if (activeState && !pausedState && lastAt) renderFreshness(lastAt); }, 1000);
 })();
 </script>
 </body>

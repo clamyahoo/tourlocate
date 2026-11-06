@@ -27,7 +27,8 @@ function live_public(array $row): array
 {
     $expired = $row['expires_at'] <= now_iso();
     $active  = ((int) $row['active'] === 1) && !$expired;
-    $out = ['ok' => true, 'active' => $active, 'expired' => $expired];
+    $paused  = $active && (int) ($row['paused'] ?? 0) === 1;
+    $out = ['ok' => true, 'active' => $active, 'expired' => $expired, 'paused' => $paused];
     if ($active && $row['last_at'] !== null) {
         $out['lat'] = (float) $row['last_lat'];
         $out['lng'] = (float) $row['last_lng'];
@@ -49,7 +50,7 @@ if ($action === 'read') {
     $ipKey = 'live-read:ip:' . tl_client_ip();
     tl_rate_guard($ipKey);
 
-    $st = db()->prepare('SELECT label, last_lat, last_lng, last_acc, last_at, expires_at, active FROM live_shares WHERE token = ?');
+    $st = db()->prepare('SELECT label, last_lat, last_lng, last_acc, last_at, expires_at, active, paused FROM live_shares WHERE token = ?');
     $st->execute([$token]);
     $row = $st->fetch();
     if (!$row) {
@@ -64,7 +65,7 @@ $uid = require_login();
 
 if ($action === 'status') {
     $st = db()->prepare(
-        'SELECT token, label, expires_at FROM live_shares
+        'SELECT token, label, expires_at, paused FROM live_shares
           WHERE user_id = ? AND active = 1 AND expires_at > ?
           ORDER BY id DESC LIMIT 1'
     );
@@ -72,7 +73,12 @@ if ($action === 'status') {
     $row = $st->fetch();
     json_out([
         'ok'    => true,
-        'share' => $row ? ['token' => $row['token'], 'label' => $row['label'], 'expiresAt' => $row['expires_at']] : null,
+        'share' => $row ? [
+            'token'     => $row['token'],
+            'label'     => $row['label'],
+            'expiresAt' => $row['expires_at'],
+            'paused'    => (int) $row['paused'] === 1,
+        ] : null,
     ]);
 }
 
@@ -161,6 +167,20 @@ switch ($action) {
         db()->prepare('UPDATE live_shares SET expires_at = ? WHERE token = ? AND user_id = ?')
             ->execute([$expires, $row['token'], $uid]);
         json_out(['ok' => true, 'token' => $row['token'], 'expiresAt' => $expires]);
+    }
+
+    case 'pause': {
+        $token = (string) ($input['token'] ?? '');
+        db()->prepare('UPDATE live_shares SET paused = 1 WHERE token = ? AND user_id = ? AND active = 1')
+            ->execute([$token, $uid]);
+        json_out(['ok' => true, 'paused' => true]);
+    }
+
+    case 'resume': {
+        $token = (string) ($input['token'] ?? '');
+        db()->prepare('UPDATE live_shares SET paused = 0 WHERE token = ? AND user_id = ? AND active = 1')
+            ->execute([$token, $uid]);
+        json_out(['ok' => true, 'paused' => false]);
     }
 
     case 'stop': {

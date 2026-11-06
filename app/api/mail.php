@@ -65,7 +65,7 @@ function tl_mail_config(): array
 }
 
 // Host säubern: versehentlich mitgetipptes Schema ("smtp://") oder ein
-// angehängter Port ("smtp.ionos.de:587") würden sonst den SNI-Hostnamen
+// angehängter Port ("smtp.example.org:587") würden sonst den SNI-Hostnamen
 // ungültig machen (Server antwortet mit "illegal parameter"). Der Port
 // kommt aus dem separaten Port-Feld.
 function tl_mail_clean_host(string $h): string

@@ -1,4 +1,16 @@
-<?php // Impressum — PLATZHALTER: eigene Angaben eintragen (siehe TODO). ?>
+<?php
+// Impressum. Der Inhalt liegt – sobald im Admin-Bereich gepflegt – in
+// app_settings (DB, persistentes Volume) und überlebt damit jeden Deploy.
+// Ist nichts hinterlegt, erscheint die Platzhalter-Vorlage.
+declare(strict_types=1);
+$impressum = '';
+try {
+    require_once __DIR__ . '/api/bootstrap.php';
+    $impressum = trim((string) tl_setting('impressum_html', ''));
+} catch (Throwable $e) {
+    $impressum = ''; // DB/Config nicht verfügbar → Vorlage zeigen
+}
+?>
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -22,8 +34,12 @@
 <div class="wrap">
   <div class="card">
     <h1>Impressum</h1>
-    <p class="todo"><strong>TODO (Betreiber):</strong> Diese Seite ist eine Vorlage. Bitte die
-    Platzhalter durch die eigenen Angaben ersetzen und diesen Hinweiskasten entfernen.
+<?php if ($impressum !== ''): ?>
+    <?= $impressum /* vom Admin gepflegt (vertrauenswürdig) */ ?>
+<?php else: ?>
+    <p class="todo"><strong>TODO (Betreiber):</strong> Diese Seite ist eine Vorlage. Bitte im
+    Admin-Bereich unter „Rechtstexte" die eigenen Angaben eintragen (sie werden in der Datenbank
+    gespeichert und bleiben bei einem Neu-Deploy erhalten).
     Für einen in Deutschland öffentlich betriebenen Dienst sind Impressumsangaben nach
     § 5 DDG verpflichtend.</p>
 
@@ -43,6 +59,7 @@
 
     <h2>Kartenmaterial</h2>
     <p>Kartendaten © <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap-Mitwirkende</a> (ODbL).</p>
+<?php endif; ?>
 
     <p style="margin-top:22px"><a href="datenschutz.php">Datenschutzerklärung</a> · <a href="index.php">Zur Anmeldung</a></p>
   </div>

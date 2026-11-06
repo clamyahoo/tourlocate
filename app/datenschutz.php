@@ -1,4 +1,16 @@
-<?php // Datenschutzerklärung — PLATZHALTER: eigene Angaben eintragen (siehe TODO). ?>
+<?php
+// Datenschutzerklärung. Der Inhalt liegt – sobald im Admin-Bereich
+// gepflegt – in app_settings (DB, persistentes Volume) und überlebt damit
+// jeden Deploy. Ist nichts hinterlegt, erscheint die Platzhalter-Vorlage.
+declare(strict_types=1);
+$datenschutz = '';
+try {
+    require_once __DIR__ . '/api/bootstrap.php';
+    $datenschutz = trim((string) tl_setting('datenschutz_html', ''));
+} catch (Throwable $e) {
+    $datenschutz = ''; // DB/Config nicht verfügbar → Vorlage zeigen
+}
+?>
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -22,8 +34,13 @@
 <div class="wrap">
   <div class="card">
     <h1>Datenschutzerklärung</h1>
-    <p class="todo"><strong>TODO (Betreiber):</strong> Vorlage — Verantwortlichen eintragen,
-    Angaben prüfen/ergänzen (ggf. rechtlich beraten lassen) und diesen Kasten entfernen.</p>
+<?php if ($datenschutz !== ''): ?>
+    <?= $datenschutz /* vom Admin gepflegt (vertrauenswürdig) */ ?>
+<?php else: ?>
+    <p class="todo"><strong>TODO (Betreiber):</strong> Vorlage — im Admin-Bereich unter
+    „Rechtstexte" den Verantwortlichen eintragen, Angaben prüfen/ergänzen (ggf. rechtlich
+    beraten lassen). Der Text wird in der Datenbank gespeichert und bleibt bei einem
+    Neu-Deploy erhalten.</p>
 
     <h2>Verantwortlicher</h2>
     <p>[Vorname Nachname, Anschrift, E-Mail — wie im <a href="impressum.php">Impressum</a>]</p>
@@ -45,7 +62,9 @@
     <h2>Öffentliche Teilen-Links</h2>
     <p>Präsentationen sind nur öffentlich einsehbar, wenn ihr Besitzer aktiv einen
     Teilen-Link erzeugt; optional zusätzlich passwortgeschützt. Der Besitzer kann den
-    Link jederzeit deaktivieren.</p>
+    Link jederzeit deaktivieren. Beim Teilen des Live-Standorts wird die zuletzt
+    gemeldete Position für die Dauer der Sitzung über einen unerratbaren Link abrufbar;
+    sie lässt sich jederzeit beenden und läuft automatisch ab.</p>
 
     <h2>Einsicht durch den Betreiber (Moderation)</h2>
     <p>Der Betreiber kann gespeicherte Inhalte einsehen, wenn dafür ein konkreter Anlass
@@ -74,6 +93,7 @@
     <p>Auskunft, Berichtigung, Löschung, Einschränkung, Datenübertragbarkeit und
     Widerspruch nach Art. 15–21 DSGVO; Beschwerderecht bei einer
     Datenschutz-Aufsichtsbehörde. Kontakt: siehe oben.</p>
+<?php endif; ?>
 
     <p style="margin-top:22px"><a href="impressum.php">Impressum</a> · <a href="index.php">Zur Anmeldung</a></p>
   </div>

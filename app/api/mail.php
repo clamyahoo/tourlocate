@@ -18,27 +18,60 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/db.php'; // tl_config()
+require_once __DIR__ . '/bootstrap.php'; // tl_config(), tl_setting()
+require_once __DIR__ . '/crypto.php';    // tl_secret_pack/unpack
 
+// Konfigurationsquelle in dieser Reihenfolge (erste nicht-leere gewinnt):
+//   1. Admin-GUI → app_settings (DB, im Volume) — der übliche Weg
+//   2. config.php (smtp_*, base_url)
+//   3. Umgebungsvariablen (TOURLOCATE_SMTP_*)
 function tl_mail_config(): array
 {
     $cfg = function_exists('tl_config') ? tl_config() : [];
-    $pick = function (string $cfgKey, string $env, string $default = '') use ($cfg): string {
+    $pick = function (string $key, string $cfgKey, string $env, string $default = '') use ($cfg): string {
+        $db = function_exists('tl_setting') ? tl_setting($key, null) : null;
+        if ($db !== null && $db !== '') {
+            return (string) $db;
+        }
         if (isset($cfg[$cfgKey]) && (string) $cfg[$cfgKey] !== '') {
             return (string) $cfg[$cfgKey];
         }
         $v = getenv($env);
         return $v !== false && $v !== '' ? (string) $v : $default;
     };
+
+    // Passwort: in der DB VERSCHLÜSSELT (smtp_pass_enc), sonst config/env.
+    $pass = '';
+    $packed = function_exists('tl_setting') ? (string) tl_setting('smtp_pass_enc', '') : '';
+    if ($packed !== '') {
+        $p = tl_secret_unpack($packed);
+        if ($p !== null) {
+            $pass = $p;
+        }
+    }
+    if ($pass === '') {
+        $pass = (string) ($cfg['smtp_pass'] ?? (getenv('TOURLOCATE_SMTP_PASS') ?: ''));
+    }
+
     return [
-        'host'      => $pick('smtp_host', 'TOURLOCATE_SMTP_HOST'),
-        'port'      => (int) ($pick('smtp_port', 'TOURLOCATE_SMTP_PORT', '587')),
-        'user'      => $pick('smtp_user', 'TOURLOCATE_SMTP_USER'),
-        'pass'      => $pick('smtp_pass', 'TOURLOCATE_SMTP_PASS'),
-        'from'      => $pick('smtp_from', 'TOURLOCATE_SMTP_FROM'),
-        'from_name' => $pick('smtp_from_name', 'TOURLOCATE_SMTP_FROM_NAME', 'Tourlocate'),
-        'secure'    => strtolower($pick('smtp_secure', 'TOURLOCATE_SMTP_SECURE', 'tls')),
+        'host'      => $pick('smtp_host', 'smtp_host', 'TOURLOCATE_SMTP_HOST'),
+        'port'      => (int) $pick('smtp_port', 'smtp_port', 'TOURLOCATE_SMTP_PORT', '587'),
+        'user'      => $pick('smtp_user', 'smtp_user', 'TOURLOCATE_SMTP_USER'),
+        'pass'      => $pass,
+        'from'      => $pick('smtp_from', 'smtp_from', 'TOURLOCATE_SMTP_FROM'),
+        'from_name' => $pick('smtp_from_name', 'smtp_from_name', 'TOURLOCATE_SMTP_FROM_NAME', 'Tourlocate'),
+        'secure'    => strtolower($pick('smtp_secure', 'smtp_secure', 'TOURLOCATE_SMTP_SECURE', 'tls')),
     ];
+}
+
+// Letzter Versandfehler (für die "Testmail"-Rückmeldung im Admin-UI).
+function tl_mail_last_error(?string $set = null): string
+{
+    static $err = '';
+    if ($set !== null) {
+        $err = $set;
+    }
+    return $err;
 }
 
 // Ist der Versand konfiguriert? (Sonst ist die Passwort-vergessen-Funktion
@@ -53,7 +86,10 @@ function tl_mail_configured(): bool
 function tl_base_url(): string
 {
     $cfg = function_exists('tl_config') ? tl_config() : [];
-    $b = (string) ($cfg['base_url'] ?? (getenv('TOURLOCATE_BASE_URL') ?: ''));
+    $b = function_exists('tl_setting') ? (string) tl_setting('base_url', '') : '';
+    if ($b === '') {
+        $b = (string) ($cfg['base_url'] ?? (getenv('TOURLOCATE_BASE_URL') ?: ''));
+    }
     if ($b !== '') {
         return rtrim($b, '/');
     }
@@ -78,8 +114,10 @@ function tl_mail_encode_header(string $s): string
 // (Fehler landen im PHP-Error-Log, nicht in der HTTP-Antwort).
 function tl_send_mail(string $to, string $subject, string $body): bool
 {
+    tl_mail_last_error('');
     $m = tl_mail_config();
     if ($m['host'] === '' || $m['from'] === '') {
+        tl_mail_last_error('SMTP ist nicht konfiguriert (Host/Absender fehlt).');
         error_log('tl_send_mail: SMTP nicht konfiguriert');
         return false;
     }
@@ -92,6 +130,7 @@ function tl_send_mail(string $to, string $subject, string $body): bool
     $ctx = stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true, 'SNI_enabled' => true]]);
     $fp = @stream_socket_client($transport . $m['host'] . ':' . $port, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
     if (!$fp) {
+        tl_mail_last_error("Verbindung zum SMTP-Server fehlgeschlagen: $errstr");
         error_log("tl_send_mail: Verbindung fehlgeschlagen ($errno): $errstr");
         return false;
     }
@@ -114,6 +153,7 @@ function tl_send_mail(string $to, string $subject, string $body): bool
         return $read();
     };
     $fail = function (string $why) use ($fp): bool {
+        tl_mail_last_error($why);
         error_log('tl_send_mail: ' . $why);
         @fwrite($fp, "QUIT\r\n");
         fclose($fp);

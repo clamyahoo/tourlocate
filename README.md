@@ -123,8 +123,13 @@ Danach ist die Seite unter `http://localhost:8080/` (statische App) bzw. `http:/
 
 Für die Selfservice-Funktion „Passwort vergessen" muss ein **SMTP-Zugang** hinterlegt werden — am besten ein **Transaktions-Mail-Dienst / SMTP-Relay** (gute Zustellbarkeit); nicht direkt von der VPS-IP senden. Ohne Konfiguration ist die Funktion einfach inaktiv (das Formular antwortet trotzdem neutral, verrät also nicht, ob eine Adresse existiert).
 
-Konfiguration per Umgebungsvariablen (`docker-compose.yml` / Portainer) — siehe die auskommentierten Beispiele in `docker-compose.yml`:
-`TOURLOCATE_SMTP_HOST`, `_PORT` (587 STARTTLS / 465 SSL), `_USER`, `_PASS`, `_FROM`, `_FROM_NAME`, `_SECURE` (`tls`/`ssl`/`none`) sowie `TOURLOCATE_BASE_URL` (öffentliche Basis-URL für die Links in den E-Mails). Alternativ lassen sich dieselben Werte in `app/api/config.php` eintragen (`smtp_*`, `base_url`). Der Reset-Link ist eine Stunde gültig und nur einmal verwendbar; die Tokens liegen nur als Hash in der Datenbank.
+Drei gleichwertige Konfigurationswege (erster nicht-leerer gewinnt in dieser Reihenfolge):
+
+1. **Admin-Bereich → „E-Mail-Versand (SMTP)"** (empfohlen): Host/Port/Verschlüsselung/Benutzer/Passwort/Absender/Basis-URL im Browser eintragen, mit „Testmail an mich senden" prüfen. Die Werte liegen in der Datenbank (persistentes Volume, überleben Deploys), das **Passwort wird verschlüsselt** gespeichert (sodium).
+2. **Umgebungsvariablen** (`docker-compose.yml` / Portainer → „Environment variables"): `TOURLOCATE_SMTP_HOST`, `_PORT` (587 STARTTLS / 465 SSL), `_USER`, `_PASS`, `_FROM`, `_FROM_NAME`, `_SECURE` (`tls`/`ssl`/`none`), `TOURLOCATE_BASE_URL`.
+3. **`app/api/config.php`**: dieselben Werte als `smtp_*` / `base_url`.
+
+Der Reset-Link ist eine Stunde gültig und nur einmal verwendbar; die Tokens liegen nur als Hash in der Datenbank.
 
 ## Architektur
 

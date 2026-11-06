@@ -36,3 +36,29 @@ function tl_decrypt(string $cipher, string $nonce): ?string
     $plain = sodium_crypto_secretbox_open($cipher, $nonce, tl_secret_key());
     return $plain === false ? null : $plain;
 }
+
+// Verschlüsselt einen String in EINE speicherbare Zeichenkette (z. B. für
+// app_settings, das nur TEXT kennt): "enc:<base64-nonce>:<base64-cipher>".
+function tl_secret_pack(string $plain): string
+{
+    [$cipher, $nonce] = tl_encrypt($plain);
+    return 'enc:' . base64_encode($nonce) . ':' . base64_encode($cipher);
+}
+
+// Gegenstück zu tl_secret_pack(); null bei ungültigem/fremdem Format.
+function tl_secret_unpack(string $packed): ?string
+{
+    if (strncmp($packed, 'enc:', 4) !== 0) {
+        return null;
+    }
+    $parts = explode(':', $packed, 3);
+    if (count($parts) !== 3) {
+        return null;
+    }
+    $nonce  = base64_decode($parts[1], true);
+    $cipher = base64_decode($parts[2], true);
+    if ($nonce === false || $cipher === false) {
+        return null;
+    }
+    return tl_decrypt($cipher, $nonce);
+}

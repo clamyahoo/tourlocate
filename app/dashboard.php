@@ -167,6 +167,7 @@ $csrf = csrf_token();
           <div style="font-size:12px;color:#667">Kannst du nicht scannen? Dann gib diesen Schlüssel
           <strong>in der App</strong> von Hand ein (nicht in das Feld unten):</div>
           <code id="twofaSecret" style="font-size:13px;user-select:all;word-break:break-all"></code>
+          <div style="font-size:11px;color:#8a94a0;margin-top:4px">Enthält keine Null und keine Eins — nur Buchstaben und die Ziffern 2–7.</div>
           <div style="font-size:12px;color:#667;margin-top:14px">6-stelligen Code <strong>aus der App</strong> hier eingeben:</div>
           <div style="margin-top:6px;display:flex;gap:6px">
             <input id="twofaCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"

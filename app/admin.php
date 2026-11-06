@@ -121,11 +121,22 @@ $csrf = csrf_token();
     <tbody></tbody>
   </table>
 
-  <h2>Audit-Log (letzte 200 Einträge)</h2>
-  <table id="auditTable">
-    <thead><tr><th>Zeit</th><th>Admin</th><th>Aktion</th><th>Nutzer</th><th>Präs.</th><th>Detail</th></tr></thead>
-    <tbody></tbody>
-  </table>
+  <h2>Rechtstexte (Impressum &amp; Datenschutz)</h2>
+  <p style="font-size:13px;color:#667;margin:0 0 10px">Diese Texte werden in der Datenbank gespeichert
+  und bleiben bei einem Neu-Deploy erhalten. HTML ist erlaubt (z. B. &lt;h2&gt;, &lt;p&gt;, &lt;a&gt;, &lt;ul&gt;/&lt;li&gt;).
+  Leer lassen zeigt wieder die Platzhalter-Vorlage. Die Überschrift und die Fußzeilen-Links setzt die Seite selbst.</p>
+  <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px">
+    <label style="font-size:13px;font-weight:600">Impressum (<a href="impressum.php" target="_blank" rel="noopener">ansehen</a>)</label>
+    <textarea id="legalImpressum" rows="8" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd2d9;border-radius:7px;font:13px/1.45 ui-monospace,monospace"></textarea>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">
+    <label style="font-size:13px;font-weight:600">Datenschutzerklärung (<a href="datenschutz.php" target="_blank" rel="noopener">ansehen</a>)</label>
+    <textarea id="legalDatenschutz" rows="10" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd2d9;border-radius:7px;font:13px/1.45 ui-monospace,monospace"></textarea>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <button id="legalSaveBtn">Rechtstexte speichern</button>
+    <span id="legalSaved" style="font-size:12px;color:#1e7d34"></span>
+  </div>
 
   <div class="msg" id="msg"></div>
 </div>
@@ -359,8 +370,26 @@ document.getElementById('createUserBtn').onclick = async () => {
   } else m.textContent = s.error || 'Fehler.';
 };
 
+// ---- Rechtstexte (Impressum/Datenschutz) ----
+async function loadLegal() {
+  const s = await api('legal');
+  if (!s.ok) return;
+  document.getElementById('legalImpressum').value = s.impressum || '';
+  document.getElementById('legalDatenschutz').value = s.datenschutz || '';
+}
+document.getElementById('legalSaveBtn').onclick = async () => {
+  const saved = document.getElementById('legalSaved');
+  saved.style.color = '#1e7d34'; saved.textContent = '';
+  const s = await api('setlegal', {
+    impressum: document.getElementById('legalImpressum').value,
+    datenschutz: document.getElementById('legalDatenschutz').value
+  });
+  if (s.ok) { saved.textContent = 'Gespeichert ✓'; setTimeout(() => { saved.textContent=''; }, 2500); }
+  else { saved.style.color = '#c0392b'; saved.textContent = s.error || 'Fehler.'; }
+};
+
 loadRegSettings(); loadInvites();
-loadUsers(); loadAudit(); loadReports();
+loadUsers(); loadAudit(); loadReports(); loadLegal();
 </script>
 </body>
 </html>

@@ -107,6 +107,16 @@ switch ($action) {
         )->fetchAll();
         json_out(['ok' => true, 'audit' => $rows]);
         break;
+
+    case 'legal':
+        // Rechtstexte (Impressum/Datenschutz) liegen in app_settings (DB,
+        // im persistenten Volume) → überleben jeden Deploy.
+        json_out([
+            'ok'          => true,
+            'impressum'   => tl_setting('impressum_html', ''),
+            'datenschutz' => tl_setting('datenschutz_html', ''),
+        ]);
+        break;
 }
 
 require_post();
@@ -243,6 +253,17 @@ switch ($action) {
         }
         db()->prepare('UPDATE reports SET status = ? WHERE id = ?')->execute(['closed', $rid]);
         tl_audit($aid, 'close_report', null, (int) $pid, 'Meldung #' . $rid . ' geschlossen');
+        json_out(['ok' => true]);
+        break;
+
+    case 'setlegal':
+        // Rechtstexte speichern (HTML vom Betreiber/Admin — höchste
+        // Vertrauensstufe, wird auf den öffentlichen Seiten roh gerendert).
+        $imp = tl_str_limit((string) ($input['impressum'] ?? ''), 20000);
+        $dat = tl_str_limit((string) ($input['datenschutz'] ?? ''), 20000);
+        tl_setting_set('impressum_html', $imp);
+        tl_setting_set('datenschutz_html', $dat);
+        tl_audit($aid, 'edit_legal', null, null, 'Impressum/Datenschutz bearbeitet');
         json_out(['ok' => true]);
         break;
 

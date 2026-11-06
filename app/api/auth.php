@@ -52,8 +52,107 @@ switch ($action) {
         require_csrf($input);
         change_password($input);
         break;
+    case 'forgotpassword':
+        require_csrf($input);
+        forgot_password($input);
+        break;
+    case 'resetpassword':
+        require_csrf($input);
+        reset_password($input);
+        break;
     default:
         json_error('Unbekannte Aktion.', 400);
+}
+
+// Passwort-Reset anfordern (öffentlich). Antwortet IMMER generisch, damit
+// nicht erkennbar wird, ob eine Adresse registriert ist (keine Enumeration).
+function forgot_password(array $input): void
+{
+    require_once __DIR__ . '/mail.php';
+    $email = trim(strtolower((string) ($input['email'] ?? '')));
+
+    // Öffentlich erreichbar → pro IP drosseln (jeder Versuch zählt)
+    $ipKey = 'forgot:ip:' . tl_client_ip();
+    tl_rate_guard($ipKey);
+    tl_rate_fail($ipKey, 20);
+
+    $generic = ['ok' => true, 'message' =>
+        'Falls ein Konto mit dieser Adresse existiert, wurde eine E-Mail mit einem Link zum Zurücksetzen gesendet. '
+        . 'Bitte sieh auch im Spam-Ordner nach.'];
+
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL) || !tl_mail_configured()) {
+        if (!tl_mail_configured()) {
+            error_log('forgot_password: SMTP nicht konfiguriert — es wird keine Mail versendet.');
+        }
+        json_out($generic);
+    }
+
+    $st = db()->prepare('SELECT id, email, blocked FROM users WHERE email = ?');
+    $st->execute([$email]);
+    $user = $st->fetch();
+
+    if ($user && (int) $user['blocked'] !== 1) {
+        // Gelegentliches Aufräumen abgelaufener/verbrauchter Tokens (~10 %)
+        if (random_int(1, 10) === 1) {
+            db()->prepare('DELETE FROM password_resets WHERE expires_at < ? OR used_at IS NOT NULL')
+                ->execute([gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]);
+        }
+        $token   = bin2hex(random_bytes(32));
+        $expires = gmdate('Y-m-d\TH:i:s\Z', time() + 3600); // 1 Stunde gültig
+        db()->prepare('INSERT INTO password_resets (user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)')
+            ->execute([(int) $user['id'], hash('sha256', $token), $expires, now_iso()]);
+
+        $link = tl_base_url() . '/app/reset.php?token=' . $token;
+        $body = "Hallo,\n\n"
+              . "für dein Tourlocate-Konto wurde das Zurücksetzen des Passworts angefordert.\n\n"
+              . "Öffne dazu diesen Link (gültig für 1 Stunde):\n\n$link\n\n"
+              . "Wenn du das nicht angefordert hast, kannst du diese E-Mail ignorieren — "
+              . "dein Passwort bleibt dann unverändert.\n\n— Tourlocate";
+        tl_send_mail($email, 'Tourlocate: Passwort zurücksetzen', $body);
+    }
+
+    json_out($generic);
+}
+
+// Neues Passwort per Reset-Token setzen (öffentlich).
+function reset_password(array $input): void
+{
+    $token = (string) ($input['token'] ?? '');
+    $new   = (string) ($input['new'] ?? '');
+
+    $ipKey = 'reset:ip:' . tl_client_ip();
+    tl_rate_guard($ipKey);
+
+    if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
+        tl_rate_fail($ipKey, 20);
+        json_error('Der Link ist ungültig oder abgelaufen.', 400);
+    }
+
+    $st = db()->prepare(
+        'SELECT pr.id, pr.user_id, pr.expires_at, pr.used_at, u.email
+           FROM password_resets pr JOIN users u ON u.id = pr.user_id
+          WHERE pr.token_hash = ?'
+    );
+    $st->execute([hash('sha256', $token)]);
+    $row = $st->fetch();
+
+    if (!$row || $row['used_at'] !== null || $row['expires_at'] <= now_iso()) {
+        tl_rate_fail($ipKey, 20);
+        json_error('Der Link ist ungültig oder abgelaufen. Bitte fordere einen neuen an.', 400);
+    }
+    if ($problem = tl_password_problem($new, (string) $row['email'])) {
+        json_error($problem);
+    }
+
+    // Passwort setzen, diesen UND alle weiteren offenen Tokens des Nutzers
+    // verbrauchen (ein Reset invalidiert ältere Anforderungen).
+    db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+        ->execute([password_hash($new, PASSWORD_DEFAULT), (int) $row['user_id']]);
+    db()->prepare('UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL')
+        ->execute([now_iso(), (int) $row['user_id']]);
+    tl_rate_clear($ipKey);
+
+    json_out(['ok' => true]);
 }
 
 // Passwort selbst ändern (angemeldet): aktuelles Passwort muss stimmen.

@@ -29,4 +29,20 @@ return [
     // Wird das Cookie nur über HTTPS gesendet? Im Produktivbetrieb true,
     // für lokale Tests ohne TLS ggf. false.
     'cookie_secure' => true,
+
+    // ---- E-Mail-Versand (für "Passwort vergessen") -------------------
+    // Optional. Wird bevorzugt über Umgebungsvariablen gesetzt (siehe
+    // api/mail.php bzw. docker-compose.yml); alternativ hier eintragen.
+    // Ohne konfigurierten SMTP-Host ist die Passwort-vergessen-Funktion
+    // einfach inaktiv (das Formular zeigt trotzdem die generische Antwort).
+    //   'smtp_host'      => 'smtp.example.org',
+    //   'smtp_port'      => 587,              // 587 (STARTTLS) | 465 (SSL) | 25
+    //   'smtp_user'      => 'postbox@example.org',
+    //   'smtp_pass'      => 'GEHEIM',
+    //   'smtp_from'      => 'noreply@example.org',
+    //   'smtp_from_name' => 'Tourlocate',
+    //   'smtp_secure'    => 'tls',            // tls | ssl | none (ohne)
+    // Öffentliche Basis-URL für Links in E-Mails (sonst aus der Anfrage
+    // abgeleitet). Beispiel: 'https://tourlocate.example.org'
+    //   'base_url'       => 'https://tourlocate.example.org',
 ];

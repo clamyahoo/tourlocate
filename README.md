@@ -119,6 +119,13 @@ Danach ist die Seite unter `http://localhost:8080/` (statische App) bzw. `http:/
 - **In Portainer**: unter „Stacks" → „Add stack" → „Web editor" den Inhalt von `docker-compose.yml` einfügen (Build-Kontext muss dabei auf das Repo zeigen, z. B. über „Repository" statt „Web editor" direkt aus Git deployen) und den Stack starten.
 - **`webdav-proxy.php`** (die ältere, proxy-basierte WebDAV-Anbindung der statischen App) funktioniert im Container ebenfalls, ganz ohne Zusatzkonfiguration — `php-curl` ist im Image enthalten.
 
+### E-Mail-Versand (optional, für „Passwort vergessen")
+
+Für die Selfservice-Funktion „Passwort vergessen" muss ein **SMTP-Zugang** hinterlegt werden — am besten ein **Transaktions-Mail-Dienst / SMTP-Relay** (gute Zustellbarkeit); nicht direkt von der VPS-IP senden. Ohne Konfiguration ist die Funktion einfach inaktiv (das Formular antwortet trotzdem neutral, verrät also nicht, ob eine Adresse existiert).
+
+Konfiguration per Umgebungsvariablen (`docker-compose.yml` / Portainer) — siehe die auskommentierten Beispiele in `docker-compose.yml`:
+`TOURLOCATE_SMTP_HOST`, `_PORT` (587 STARTTLS / 465 SSL), `_USER`, `_PASS`, `_FROM`, `_FROM_NAME`, `_SECURE` (`tls`/`ssl`/`none`) sowie `TOURLOCATE_BASE_URL` (öffentliche Basis-URL für die Links in den E-Mails). Alternativ lassen sich dieselben Werte in `app/api/config.php` eintragen (`smtp_*`, `base_url`). Der Reset-Link ist eine Stunde gültig und nur einmal verwendbar; die Tokens liegen nur als Hash in der Datenbank.
+
 ## Architektur
 
 Der komplette Programmcode liegt in `js/` als ES-Module, eingebunden über `<script type="module" src="js/main.js">` in `index.html`:

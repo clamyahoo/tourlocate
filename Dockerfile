@@ -12,6 +12,7 @@
 FROM php:8.3-apache
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
         libsqlite3-dev \
         libpng-dev \
         libjpeg62-turbo-dev \
@@ -19,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libsodium-dev \
         libcurl4-openssl-dev \
         cron \
+    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && docker-php-ext-configure gd --with-jpeg --with-freetype \
     && docker-php-ext-install -j"$(nproc)" pdo_sqlite gd exif curl sodium \

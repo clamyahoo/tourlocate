@@ -127,7 +127,14 @@ function tl_send_mail(string $to, string $subject, string $body): bool
 
     $port = $m['port'] ?: 587;
     $transport = ($m['secure'] === 'ssl') ? 'ssl://' : 'tcp://';
-    $ctx = stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true, 'SNI_enabled' => true]]);
+    // peer_name explizit setzen, damit SNI + Zertifikatsprüfung auch beim
+    // STARTTLS-Upgrade den richtigen Hostnamen verwenden.
+    $ctx = stream_context_create(['ssl' => [
+        'verify_peer'      => true,
+        'verify_peer_name' => true,
+        'peer_name'        => $m['host'],
+        'SNI_enabled'      => true,
+    ]]);
     $fp = @stream_socket_client($transport . $m['host'] . ':' . $port, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
     if (!$fp) {
         tl_mail_last_error("Verbindung zum SMTP-Server fehlgeschlagen: $errstr");
@@ -170,8 +177,23 @@ function tl_send_mail(string $to, string $subject, string $body): bool
         if ($codeOf($cmd('STARTTLS')) !== 220) {
             return $fail('STARTTLS abgelehnt');
         }
-        if (!stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
-            return $fail('TLS-Aushandlung fehlgeschlagen');
+        // Moderne TLS-Versionen erzwingen (reine TLS_CLIENT-Konstante
+        // verhandelt je nach Build evtl. nur alte Versionen).
+        $crypto = STREAM_CRYPTO_METHOD_TLS_CLIENT;
+        if (defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT')) {
+            $crypto |= STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT;
+        }
+        if (defined('STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT')) {
+            $crypto |= STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT;
+        }
+        $before = error_get_last();
+        if (!@stream_socket_enable_crypto($fp, true, $crypto)) {
+            // Echte OpenSSL-Ursache mitgeben (z. B. "certificate verify
+            // failed: unable to get local issuer certificate").
+            $e = error_get_last();
+            $detail = ($e && $e !== $before && !empty($e['message']))
+                ? ' (' . trim(preg_replace('/^.*?:\s*/', '', $e['message'])) . ')' : '';
+            return $fail('TLS-Aushandlung fehlgeschlagen' . $detail);
         }
         if ($codeOf($cmd('EHLO tourlocate')) !== 250) {
             return $fail('EHLO (nach TLS) abgelehnt');

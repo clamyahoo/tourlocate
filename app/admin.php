@@ -121,6 +121,12 @@ $csrf = csrf_token();
     <tbody></tbody>
   </table>
 
+  <h2>Audit-Log (letzte 200 Einträge)</h2>
+  <table id="auditTable">
+    <thead><tr><th>Zeit</th><th>Admin</th><th>Aktion</th><th>Nutzer</th><th>Präs.</th><th>Detail</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
   <h2>E-Mail-Versand (SMTP)</h2>
   <p style="font-size:13px;color:#667;margin:0 0 10px">Für „Passwort vergessen". Wird in der Datenbank gespeichert
   (Passwort verschlüsselt) und bleibt bei einem Neu-Deploy erhalten. Empfehlung: ein SMTP-Relay / Transaktions-Mail-Dienst

@@ -18,29 +18,32 @@ services:
       # Dasselbe benannte Volume wie bisher — der Inhalt (DB, Uploads,
       # config.php) bleibt beim Umhängen erhalten.
       - tourlocate_data:/var/lib/tourlocate
+    # Werte aus "Environment variables" (Portainer-Stack) oder einer .env
+    # werden über die ${…}-Platzhalter eingesetzt. Nicht gesetzte Variablen
+    # fallen auf den Standard hinter ":-" zurück — man muss also nur die
+    # Variablen anlegen, die man wirklich braucht.
     environment:
-      # Auf false setzen, wenn (noch) kein HTTPS vor dem Container läuft
+      # Auf "false" setzen, wenn (noch) kein HTTPS vor dem Container läuft
       # — sonst wird der Session-Cookie vom Browser verworfen.
-      TOURLOCATE_COOKIE_SECURE: "true"
+      TOURLOCATE_COOKIE_SECURE: "${TOURLOCATE_COOKIE_SECURE:-true}"
       # Optional: eigener WebDAV-Proxy-Schlüssel für die statische App
       # (nur [A-Za-z0-9._-]). Kein echtes Secret, aber besser als der
-      # Standardwert. Erzeugen z. B. mit:
-      #   php -r "echo bin2hex(random_bytes(16));"
-      # TOURLOCATE_PROXY_KEY: "hier-eigenen-wert-einsetzen"
-      #
-      # Optional: E-Mail-Versand für "Passwort vergessen". Ohne SMTP-Host
-      # ist die Funktion inaktiv (das Formular antwortet trotzdem generisch).
+      # Standardwert. Leer = Standard bleibt.
+      TOURLOCATE_PROXY_KEY: "${TOURLOCATE_PROXY_KEY:-}"
+      # E-Mail-Versand für "Passwort vergessen". Ohne SMTP-Host ist die
+      # Funktion inaktiv (das Formular antwortet trotzdem generisch).
       # Einen Transaktions-Mail-Dienst / SMTP-Relay verwenden (gute
       # Zustellbarkeit); NICHT direkt von der VPS-IP senden.
-      # TOURLOCATE_SMTP_HOST: "smtp.example.org"
-      # TOURLOCATE_SMTP_PORT: "587"            # 587 (STARTTLS) | 465 (SSL) | 25
-      # TOURLOCATE_SMTP_USER: "postbox@example.org"
-      # TOURLOCATE_SMTP_PASS: "GEHEIM"
-      # TOURLOCATE_SMTP_FROM: "noreply@example.org"
-      # TOURLOCATE_SMTP_FROM_NAME: "Tourlocate"
-      # TOURLOCATE_SMTP_SECURE: "tls"          # tls | ssl | none (ohne)
-      # Öffentliche Basis-URL für die Links in den E-Mails:
-      # TOURLOCATE_BASE_URL: "https://tourlocate.example.org"
+      TOURLOCATE_SMTP_HOST: "${TOURLOCATE_SMTP_HOST:-}"
+      TOURLOCATE_SMTP_PORT: "${TOURLOCATE_SMTP_PORT:-587}"   # 587 STARTTLS | 465 SSL | 25
+      TOURLOCATE_SMTP_USER: "${TOURLOCATE_SMTP_USER:-}"
+      TOURLOCATE_SMTP_PASS: "${TOURLOCATE_SMTP_PASS:-}"
+      TOURLOCATE_SMTP_FROM: "${TOURLOCATE_SMTP_FROM:-}"
+      TOURLOCATE_SMTP_FROM_NAME: "${TOURLOCATE_SMTP_FROM_NAME:-Tourlocate}"
+      TOURLOCATE_SMTP_SECURE: "${TOURLOCATE_SMTP_SECURE:-tls}"  # tls | ssl | none
+      # Öffentliche Basis-URL für die Links in den E-Mails, z. B.
+      # https://tourlocate.example.org
+      TOURLOCATE_BASE_URL: "${TOURLOCATE_BASE_URL:-}"
     restart: unless-stopped
 
 volumes:

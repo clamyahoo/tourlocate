@@ -117,6 +117,25 @@ switch ($action) {
             'datenschutz' => tl_setting('datenschutz_html', ''),
         ]);
         break;
+
+    case 'mailsettings':
+        // SMTP-Einstellungen für die GUI. Zeigt die EFFEKTIVEN Werte
+        // (DB → config.php → Env), aber NIE das Passwort (nur hasPass).
+        require_once __DIR__ . '/mail.php';
+        $m = tl_mail_config();
+        json_out([
+            'ok'         => true,
+            'host'       => $m['host'],
+            'port'       => $m['port'],
+            'user'       => $m['user'],
+            'from'       => $m['from'],
+            'fromName'   => $m['from_name'],
+            'secure'     => $m['secure'],
+            'baseUrl'    => tl_setting('base_url', ''),
+            'hasPass'    => $m['pass'] !== '',
+            'configured' => tl_mail_configured(),
+        ]);
+        break;
 }
 
 require_post();
@@ -265,6 +284,51 @@ switch ($action) {
         tl_setting_set('datenschutz_html', $dat);
         tl_audit($aid, 'edit_legal', null, null, 'Impressum/Datenschutz bearbeitet');
         json_out(['ok' => true]);
+        break;
+
+    case 'setmailsettings':
+        // SMTP-Einstellungen in app_settings (DB im Volume) speichern. Das
+        // Passwort wird VERSCHLÜSSELT abgelegt (sodium), nie im Klartext.
+        require_once __DIR__ . '/crypto.php';
+        tl_setting_set('smtp_host', trim((string) ($input['host'] ?? '')));
+        $port = (int) ($input['port'] ?? 587);
+        tl_setting_set('smtp_port', (string) (($port >= 1 && $port <= 65535) ? $port : 587));
+        tl_setting_set('smtp_user', trim((string) ($input['user'] ?? '')));
+        tl_setting_set('smtp_from', trim((string) ($input['from'] ?? '')));
+        tl_setting_set('smtp_from_name', trim((string) ($input['fromName'] ?? '')));
+        $secure = strtolower(trim((string) ($input['secure'] ?? 'tls')));
+        tl_setting_set('smtp_secure', in_array($secure, ['tls', 'ssl', 'none'], true) ? $secure : 'tls');
+        tl_setting_set('base_url', trim((string) ($input['baseUrl'] ?? '')));
+        // Passwort: nur anfassen, wenn Feld gefüllt; "clearpass" löscht es.
+        if (!empty($input['clearpass'])) {
+            tl_setting_set('smtp_pass_enc', '');
+        } elseif (($pw = (string) ($input['pass'] ?? '')) !== '') {
+            tl_setting_set('smtp_pass_enc', tl_secret_pack($pw));
+        }
+        tl_audit($aid, 'edit_mailsettings', null, null, 'SMTP-Einstellungen geändert');
+        json_out(['ok' => true]);
+        break;
+
+    case 'testmail':
+        // Testnachricht an die eigene Admin-Adresse mit der AKTUELL
+        // gespeicherten Konfiguration.
+        require_once __DIR__ . '/mail.php';
+        if (!tl_mail_configured()) {
+            json_error('SMTP ist noch nicht vollständig konfiguriert (Host und Absender nötig).', 400);
+        }
+        $st = db()->prepare('SELECT email FROM users WHERE id = ?');
+        $st->execute([$aid]);
+        $to = (string) $st->fetchColumn();
+        $ok = tl_send_mail(
+            $to,
+            'Tourlocate: Testnachricht',
+            "Dies ist eine Testnachricht von Tourlocate.\n\n"
+            . "Wenn du sie erhältst, funktioniert der E-Mail-Versand (z. B. fuer die Passwort-vergessen-Funktion).\n\n-- Tourlocate"
+        );
+        if ($ok) {
+            json_out(['ok' => true, 'to' => $to]);
+        }
+        json_out(['ok' => false, 'error' => 'Versand fehlgeschlagen: ' . (tl_mail_last_error() ?: 'unbekannter Fehler')]);
         break;
 
     default:

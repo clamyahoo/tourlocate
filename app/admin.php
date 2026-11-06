@@ -121,7 +121,38 @@ $csrf = csrf_token();
     <tbody></tbody>
   </table>
 
-  <h2>Rechtstexte (Impressum &amp; Datenschutz)</h2>
+  <h2>E-Mail-Versand (SMTP)</h2>
+  <p style="font-size:13px;color:#667;margin:0 0 10px">Für „Passwort vergessen". Wird in der Datenbank gespeichert
+  (Passwort verschlüsselt) und bleibt bei einem Neu-Deploy erhalten. Empfehlung: ein SMTP-Relay / Transaktions-Mail-Dienst
+  (gute Zustellbarkeit, nicht direkt von der Server-IP). Diese Werte haben Vorrang vor Umgebungsvariablen / config.php.</p>
+  <style>
+    #mailForm{display:grid;grid-template-columns:150px 1fr;gap:8px 10px;max-width:540px;align-items:center;font-size:13px}
+    #mailForm input, #mailForm select{padding:6px 8px;border:1px solid #cbd2d9;border-radius:6px;font:inherit;width:100%;box-sizing:border-box}
+    @media (max-width:520px){ #mailForm{grid-template-columns:1fr} #mailForm label{margin-top:6px} }
+  </style>
+  <div id="mailForm">
+    <label for="mHost">Host</label><input id="mHost" type="text" autocomplete="off" placeholder="smtp.example.org">
+    <label for="mPort">Port</label><input id="mPort" type="number" min="1" max="65535" placeholder="587">
+    <label for="mSecure">Verschlüsselung</label>
+    <select id="mSecure">
+      <option value="tls">STARTTLS (Port 587)</option>
+      <option value="ssl">SSL/TLS (Port 465)</option>
+      <option value="none">keine</option>
+    </select>
+    <label for="mUser">Benutzer</label><input id="mUser" type="text" autocomplete="off">
+    <label for="mPass">Passwort</label><input id="mPass" type="password" autocomplete="new-password">
+    <label for="mFrom">Absender (From)</label><input id="mFrom" type="email" placeholder="noreply@example.org">
+    <label for="mFromName">Absender-Name</label><input id="mFromName" type="text" placeholder="Tourlocate">
+    <label for="mBaseUrl">Basis-URL</label><input id="mBaseUrl" type="url" placeholder="https://tourlocate.example.org">
+  </div>
+  <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <button id="mailSaveBtn">Speichern</button>
+    <button id="mailTestBtn">Testmail an mich senden</button>
+    <label style="font-size:12px;color:#667"><input type="checkbox" id="mClearPass"> Passwort löschen</label>
+    <span id="mailMsg" style="font-size:13px"></span>
+  </div>
+
+  <h2 style="margin-top:28px">Rechtstexte (Impressum &amp; Datenschutz)</h2>
   <p style="font-size:13px;color:#667;margin:0 0 10px">Diese Texte werden in der Datenbank gespeichert
   und bleiben bei einem Neu-Deploy erhalten. HTML ist erlaubt (z. B. &lt;h2&gt;, &lt;p&gt;, &lt;a&gt;, &lt;ul&gt;/&lt;li&gt;).
   Leer lassen zeigt wieder die Platzhalter-Vorlage. Die Überschrift und die Fußzeilen-Links setzt die Seite selbst.</p>
@@ -388,8 +419,50 @@ document.getElementById('legalSaveBtn').onclick = async () => {
   else { saved.style.color = '#c0392b'; saved.textContent = s.error || 'Fehler.'; }
 };
 
+// ---- E-Mail-Versand (SMTP) ----
+async function loadMailSettings() {
+  const s = await api('mailsettings');
+  if (!s.ok) return;
+  document.getElementById('mHost').value = s.host || '';
+  document.getElementById('mPort').value = s.port || 587;
+  document.getElementById('mUser').value = s.user || '';
+  document.getElementById('mFrom').value = s.from || '';
+  document.getElementById('mFromName').value = s.fromName || '';
+  document.getElementById('mBaseUrl').value = s.baseUrl || '';
+  document.getElementById('mSecure').value = s.secure || 'tls';
+  document.getElementById('mPass').placeholder = s.hasPass ? '•••••• (gespeichert — leer = unverändert)' : '';
+}
+document.getElementById('mailSaveBtn').onclick = async () => {
+  const mm = document.getElementById('mailMsg');
+  mm.style.color = '#1e7d34'; mm.textContent = 'Speichere…';
+  const s = await api('setmailsettings', {
+    host: document.getElementById('mHost').value,
+    port: Number(document.getElementById('mPort').value) || 587,
+    user: document.getElementById('mUser').value,
+    pass: document.getElementById('mPass').value,
+    clearpass: document.getElementById('mClearPass').checked ? 1 : 0,
+    from: document.getElementById('mFrom').value,
+    fromName: document.getElementById('mFromName').value,
+    secure: document.getElementById('mSecure').value,
+    baseUrl: document.getElementById('mBaseUrl').value
+  });
+  if (s.ok) {
+    mm.style.color = '#1e7d34'; mm.textContent = 'Gespeichert ✓';
+    document.getElementById('mPass').value = '';
+    document.getElementById('mClearPass').checked = false;
+    loadMailSettings();
+  } else { mm.style.color = '#c0392b'; mm.textContent = s.error || 'Fehler.'; }
+};
+document.getElementById('mailTestBtn').onclick = async () => {
+  const mm = document.getElementById('mailMsg');
+  mm.style.color = '#667'; mm.textContent = 'Sende Testmail…';
+  const s = await api('testmail', {});
+  if (s.ok) { mm.style.color = '#1e7d34'; mm.textContent = 'Testmail an ' + s.to + ' gesendet ✓ (auch Spam-Ordner prüfen)'; }
+  else { mm.style.color = '#c0392b'; mm.textContent = s.error || 'Versand fehlgeschlagen.'; }
+};
+
 loadRegSettings(); loadInvites();
-loadUsers(); loadAudit(); loadReports(); loadLegal();
+loadUsers(); loadAudit(); loadReports(); loadLegal(); loadMailSettings();
 </script>
 </body>
 </html>

@@ -156,21 +156,24 @@ $csrf = csrf_token();
     </div>
     <div id="twofaSetup" style="display:none;margin-top:14px;border-top:1px solid #eef2f6;padding-top:14px">
       <p style="font-size:13px;margin:0 0 10px">Scanne den QR-Code mit einer Authenticator-App
-      (z. B. Aegis, FreeOTP, Google Authenticator) oder gib das Secret von Hand ein.
-      Bestätige dann mit einem aktuellen Code.</p>
+      (z. B. Aegis, FreeOTP, Google Authenticator) und bestätige dann unten mit dem
+      <strong>6-stelligen Code</strong>, den die App anzeigt.</p>
       <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
         <div style="width:180px;height:180px;border:1px solid #e2e8f0;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden">
           <img id="twofaQr" alt="QR-Code" style="width:100%;height:100%;image-rendering:pixelated;display:none">
           <span id="twofaQrFallback" style="display:none;font-size:12px;color:#92400e;text-align:center;padding:8px">QR-Code konnte nicht geladen werden. Bitte das Secret rechts von Hand in der App eingeben.</span>
         </div>
         <div style="min-width:220px">
-          <div style="font-size:12px;color:#667">Secret (manuelle Eingabe):</div>
+          <div style="font-size:12px;color:#667">Kannst du nicht scannen? Dann gib diesen Schlüssel
+          <strong>in der App</strong> von Hand ein (nicht in das Feld unten):</div>
           <code id="twofaSecret" style="font-size:13px;user-select:all;word-break:break-all"></code>
-          <div style="margin-top:12px;display:flex;gap:6px">
-            <input id="twofaCode" type="text" inputmode="numeric" placeholder="123456"
+          <div style="font-size:12px;color:#667;margin-top:14px">6-stelligen Code <strong>aus der App</strong> hier eingeben:</div>
+          <div style="margin-top:6px;display:flex;gap:6px">
+            <input id="twofaCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"
                    style="width:110px;padding:8px;border:1px solid #cbd2d9;border-radius:7px;font:inherit">
             <button class="primary" id="twofaConfirmBtn">Aktivieren</button>
           </div>
+          <div id="twofaMsg" style="font-size:13px;color:#c0392b;min-height:1em;margin-top:6px"></div>
         </div>
       </div>
     </div>
@@ -352,9 +355,10 @@ enableBtn.onclick = async () => {
 };
 
 document.getElementById('twofaConfirmBtn').onclick = async () => {
+  const tm = document.getElementById('twofaMsg');
+  tm.textContent = '';
   const s = await totpApi('confirm', { code: document.getElementById('twofaCode').value.trim() });
-  if (!s.ok) { msg.textContent = s.error || 'Fehler.'; return; }
-  msg.textContent = '';
+  if (!s.ok) { tm.textContent = s.error || 'Der Code stimmt nicht — bitte den aktuellen 6-stelligen Code aus der App eingeben.'; return; }
   document.getElementById('twofaSetup').style.display = 'none';
   document.getElementById('twofaRecovery').style.display = 'block';
   document.getElementById('twofaCodes').textContent = s.recoveryCodes.join('\n');

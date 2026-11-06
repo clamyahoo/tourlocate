@@ -117,7 +117,7 @@ $csrf = csrf_token();
 
   <h2>Meldungen (Inhalt melden)</h2>
   <table id="reportsTable">
-    <thead><tr><th>Zeit</th><th>Präsentation</th><th>Begründung</th><th>Status</th><th>Aktionen</th></tr></thead>
+    <thead><tr><th>Zeit</th><th>Präsentation</th><th>Kategorie</th><th>Begründung</th><th>Melder</th><th>Status</th><th>Aktionen</th></tr></thead>
     <tbody></tbody>
   </table>
 
@@ -301,17 +301,20 @@ async function loadAudit() {
 async function loadReports() {
   const d = await api('reports');
   if (!d.ok) return;
+  const catLabels = { urheberrecht:'Urheberrecht', persoenlichkeit:'Persönlichkeitsrecht', gewalt_hass:'Gewalt / Hass', spam:'Spam', sonstiges:'Sonstiges' };
   document.querySelector('#reportsTable tbody').innerHTML = d.reports.map(r => `
     <tr>
       <td>${fmt(r.created_at)}</td>
       <td>#${r.presentation_id} ${esc(r.title)} (Nutzer ${r.user_id})</td>
-      <td style="max-width:280px">${esc(r.reason)}</td>
+      <td>${r.category ? esc(catLabels[r.category] || r.category) : '—'}</td>
+      <td style="max-width:260px">${esc(r.reason)}</td>
+      <td>${r.reporter_email ? `<a href="mailto:${esc(r.reporter_email)}">${esc(r.reporter_email)}</a>` : '—'}</td>
       <td>${r.status === 'open' ? '<span class="badge blocked">offen</span>' : 'erledigt'}</td>
       <td>
         <button data-view="${r.presentation_id}">Ansehen (auditiert)</button>
         ${r.status === 'open' ? `<button data-close="${r.id}">Erledigt</button>` : ''}
       </td>
-    </tr>`).join('') || '<tr><td colspan="5">Keine Meldungen.</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="7">Keine Meldungen.</td></tr>';
 }
 
 document.querySelector('#reportsTable tbody').addEventListener('click', async e => {

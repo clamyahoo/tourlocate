@@ -142,6 +142,15 @@ $json = str_replace('<', '\\u003c', $json); // nie </script> in der Payload
     <p style="font-size:13px;color:#555;margin:8px 0">Du hältst Inhalte dieser Seite für rechtswidrig
     oder unangemessen? Beschreibe kurz das Problem — der Betreiber prüft die Meldung.</p>
     <textarea id="reportReason" rows="4" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd2d9;border-radius:7px;font:inherit" placeholder="Was ist das Problem? (mind. 10 Zeichen)"></textarea>
+    <select id="reportCategory" style="width:100%;box-sizing:border-box;margin-top:8px;padding:8px;border:1px solid #cbd2d9;border-radius:7px;font:inherit">
+      <option value="">Kategorie wählen (optional) …</option>
+      <option value="urheberrecht">Urheberrecht</option>
+      <option value="persoenlichkeit">Persönlichkeitsrecht / Privatsphäre</option>
+      <option value="gewalt_hass">Gewalt / Hass</option>
+      <option value="spam">Spam / Irreführung</option>
+      <option value="sonstiges">Sonstiges</option>
+    </select>
+    <input id="reportEmail" type="email" placeholder="Deine E-Mail für Rückfragen (optional)" autocomplete="email" style="width:100%;box-sizing:border-box;margin-top:8px;padding:8px;border:1px solid #cbd2d9;border-radius:7px;font:inherit">
     <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end">
       <button id="reportCancel" style="padding:8px 12px;border:1px solid #cbd2d9;border-radius:7px;background:#fff;cursor:pointer">Abbrechen</button>
       <button id="reportSend" style="padding:8px 12px;border:0;border-radius:7px;background:#c0392b;color:#fff;font-weight:600;cursor:pointer">Melden</button>
@@ -239,13 +248,21 @@ $json = str_replace('<', '\\u003c', $json); // nie </script> in der Payload
     try {
       var res = await fetch('api/report.php', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ token: TOKEN, reason: document.getElementById('reportReason').value })
+        body: JSON.stringify({
+          token: TOKEN,
+          reason: document.getElementById('reportReason').value,
+          category: document.getElementById('reportCategory').value,
+          email: document.getElementById('reportEmail').value
+        })
       });
       var d = await res.json();
       if (d.ok) {
         m.style.color = '#1e7d34';
         m.textContent = 'Danke — die Meldung wurde übermittelt.';
-        setTimeout(function(){ modal.style.display='none'; m.textContent=''; document.getElementById('reportReason').value=''; }, 1800);
+        setTimeout(function(){ modal.style.display='none'; m.textContent='';
+          document.getElementById('reportReason').value='';
+          document.getElementById('reportCategory').value='';
+          document.getElementById('reportEmail').value=''; }, 1800);
       } else m.textContent = d.error || 'Fehler.';
     } catch(e) { m.textContent = 'Verbindungsfehler.'; }
   };

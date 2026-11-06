@@ -101,6 +101,14 @@ function tl_migrate(PDO $pdo): void
             // Spalte existiert bereits — ok
         }
     }
+    // reports: optionale Melder-Angaben (E-Mail für Rückfragen, Kategorie)
+    foreach (['reporter_email TEXT', 'category TEXT'] as $col) {
+        try {
+            $pdo->exec("ALTER TABLE reports ADD COLUMN $col");
+        } catch (PDOException $e) {
+            // Spalte existiert bereits — ok (oder reports noch nicht da → unten erstellt)
+        }
+    }
 
     // Audit-Log: protokolliert Admin-Zugriffe auf fremde Inhalte (wer,
     // wann, was) — Beleg für anlassbezogene statt wahlloser Einsicht.
@@ -143,6 +151,8 @@ function tl_migrate(PDO $pdo): void
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             presentation_id INTEGER NOT NULL REFERENCES presentations(id) ON DELETE CASCADE,
             reason          TEXT NOT NULL,
+            reporter_email  TEXT,
+            category        TEXT,
             status          TEXT NOT NULL DEFAULT 'open',
             created_at      TEXT NOT NULL
         );

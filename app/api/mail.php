@@ -64,6 +64,17 @@ function tl_mail_config(): array
     ];
 }
 
+// Host säubern: versehentlich mitgetipptes Schema ("smtp://") oder ein
+// angehängter Port ("smtp.example.org:587") würden sonst den SNI-Hostnamen
+// ungültig machen (Server antwortet mit "illegal parameter"). Der Port
+// kommt aus dem separaten Port-Feld.
+function tl_mail_clean_host(string $h): string
+{
+    $h = preg_replace('~^[a-z][a-z0-9+.-]*://~i', '', trim($h)); // Schema weg
+    $h = preg_replace('/:\d+$/', '', $h);                        // :Port weg
+    return trim($h);
+}
+
 // Letzter Versandfehler (für die "Testmail"-Rückmeldung im Admin-UI).
 function tl_mail_last_error(?string $set = null): string
 {
@@ -125,6 +136,7 @@ function tl_send_mail(string $to, string $subject, string $body): bool
     $to   = str_replace(["\r", "\n"], '', $to);
     $from = str_replace(["\r", "\n"], '', $m['from']);
 
+    $host = tl_mail_clean_host($m['host']);
     $port = $m['port'] ?: 587;
     $transport = ($m['secure'] === 'ssl') ? 'ssl://' : 'tcp://';
     // peer_name explizit setzen, damit SNI + Zertifikatsprüfung auch beim
@@ -132,10 +144,10 @@ function tl_send_mail(string $to, string $subject, string $body): bool
     $ctx = stream_context_create(['ssl' => [
         'verify_peer'      => true,
         'verify_peer_name' => true,
-        'peer_name'        => $m['host'],
+        'peer_name'        => $host,
         'SNI_enabled'      => true,
     ]]);
-    $fp = @stream_socket_client($transport . $m['host'] . ':' . $port, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
+    $fp = @stream_socket_client($transport . $host . ':' . $port, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
     if (!$fp) {
         tl_mail_last_error("Verbindung zum SMTP-Server fehlgeschlagen: $errstr");
         error_log("tl_send_mail: Verbindung fehlgeschlagen ($errno): $errstr");

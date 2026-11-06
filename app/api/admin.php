@@ -290,7 +290,8 @@ switch ($action) {
         // SMTP-Einstellungen in app_settings (DB im Volume) speichern. Das
         // Passwort wird VERSCHLÜSSELT abgelegt (sodium), nie im Klartext.
         require_once __DIR__ . '/crypto.php';
-        tl_setting_set('smtp_host', trim((string) ($input['host'] ?? '')));
+        require_once __DIR__ . '/mail.php';
+        tl_setting_set('smtp_host', tl_mail_clean_host((string) ($input['host'] ?? '')));
         $port = (int) ($input['port'] ?? 587);
         tl_setting_set('smtp_port', (string) (($port >= 1 && $port <= 65535) ? $port : 587));
         tl_setting_set('smtp_user', trim((string) ($input['user'] ?? '')));

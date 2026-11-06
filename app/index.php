@@ -76,6 +76,13 @@ $canRegister = $regMode === 'open' || ($regMode === 'invite' && $inviteValid);
     <?php elseif ($regMode === 'invite'): ?><span style="color:#889">Registrierung nur mit Einladung.</span>
     <?php endif; ?>
   </div>
+  <div class="switch" id="forgotLine"><a id="forgotLink">Passwort vergessen?</a></div>
+  <div id="forgotBox" style="display:none;margin-top:12px;border-top:1px solid #eef2f6;padding-top:12px">
+    <label for="forgotEmail">E-Mail für den Link zum Zurücksetzen</label>
+    <input id="forgotEmail" type="email" autocomplete="email">
+    <button type="button" id="forgotSendBtn">Link senden</button>
+    <div class="msg" id="forgotMsg"></div>
+  </div>
   <div class="msg" id="msg"></div>
   <div style="margin-top:16px;text-align:center;font-size:12px">
     <a href="impressum.php" style="color:#889">Impressum</a> ·
@@ -116,6 +123,10 @@ function setMode(m) {
   const sl = document.getElementById('switchLink');
   if (sl) sl.onclick = () => setMode(m === 'login' ? 'register' : 'login');
   msg.textContent = '';
+  // "Passwort vergessen?" nur im Login-Modus anbieten
+  const fl = document.getElementById('forgotLine');
+  if (fl) fl.style.display = (m === 'login') ? '' : 'none';
+  document.getElementById('forgotBox').style.display = 'none';
 }
 const CAN_REGISTER = <?= $canRegister ? 'true' : 'false' ?>;
 const INVITE_TOKEN = <?= json_encode($inviteToken) ?>;
@@ -124,6 +135,39 @@ if (switchLink) switchLink.onclick = () => setMode('register');
 if (CAN_REGISTER && INVITE_TOKEN) setMode('register');
 
 let awaiting2fa = false;
+
+// ---- Passwort vergessen ----
+document.getElementById('forgotLink').onclick = () => {
+  const box = document.getElementById('forgotBox');
+  box.style.display = box.style.display === 'none' ? 'block' : 'none';
+  if (box.style.display === 'block') {
+    const fe = document.getElementById('forgotEmail');
+    fe.value = document.getElementById('email').value;
+    fe.focus();
+  }
+};
+document.getElementById('forgotSendBtn').onclick = async () => {
+  const fm = document.getElementById('forgotMsg');
+  const btn = document.getElementById('forgotSendBtn');
+  fm.className = 'msg';
+  fm.textContent = 'Moment…';
+  btn.disabled = true;
+  try {
+    const res = await fetch('api/auth.php?action=forgotpassword', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+      body: JSON.stringify({ email: document.getElementById('forgotEmail').value, csrf: CSRF })
+    });
+    const data = await res.json().catch(() => ({}));
+    fm.className = data.ok ? 'msg ok' : 'msg err';
+    fm.textContent = data.ok ? (data.message || 'Gesendet.') : (data.error || 'Fehler.');
+  } catch (err) {
+    fm.className = 'msg err';
+    fm.textContent = 'Verbindungsfehler: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
 
 document.getElementById('authForm').addEventListener('submit', async (e) => {
   e.preventDefault();

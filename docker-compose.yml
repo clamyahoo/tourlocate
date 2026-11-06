@@ -27,6 +27,20 @@ services:
       # Standardwert. Erzeugen z. B. mit:
       #   php -r "echo bin2hex(random_bytes(16));"
       # TOURLOCATE_PROXY_KEY: "hier-eigenen-wert-einsetzen"
+      #
+      # Optional: E-Mail-Versand für "Passwort vergessen". Ohne SMTP-Host
+      # ist die Funktion inaktiv (das Formular antwortet trotzdem generisch).
+      # Einen Transaktions-Mail-Dienst / SMTP-Relay verwenden (gute
+      # Zustellbarkeit); NICHT direkt von der VPS-IP senden.
+      # TOURLOCATE_SMTP_HOST: "smtp.example.org"
+      # TOURLOCATE_SMTP_PORT: "587"            # 587 (STARTTLS) | 465 (SSL) | 25
+      # TOURLOCATE_SMTP_USER: "postbox@example.org"
+      # TOURLOCATE_SMTP_PASS: "GEHEIM"
+      # TOURLOCATE_SMTP_FROM: "noreply@example.org"
+      # TOURLOCATE_SMTP_FROM_NAME: "Tourlocate"
+      # TOURLOCATE_SMTP_SECURE: "tls"          # tls | ssl | none (ohne)
+      # Öffentliche Basis-URL für die Links in den E-Mails:
+      # TOURLOCATE_BASE_URL: "https://tourlocate.example.org"
     restart: unless-stopped
 
 volumes:

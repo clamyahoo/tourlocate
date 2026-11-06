@@ -57,6 +57,10 @@ try {
       <li><strong>Technisch:</strong> Session-Cookie (nur für die Anmeldung, kein Tracking);
       IP-bezogene Zähler zum Schutz vor Missbrauch (Anmeldeversuche, Meldungen),
       die automatisch wieder gelöscht werden.</li>
+      <li><strong>Inhaltsmeldungen:</strong> Bei einer Meldung über „Inhalt melden" werden die
+      Begründung, eine optionale Kategorie und eine <em>freiwillig</em> angegebene E-Mail-Adresse
+      gespeichert. Die E-Mail-Adresse wird ausschließlich zur Bearbeitung der Meldung und für
+      etwaige Rückfragen verwendet.</li>
     </ul>
 
     <h2>Öffentliche Teilen-Links</h2>

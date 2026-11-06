@@ -90,8 +90,8 @@ switch ($action) {
 
     case 'reports':
         $rows = db()->query(
-            'SELECT r.id, r.presentation_id, r.reason, r.status, r.created_at,
-                    p.title, p.user_id
+            'SELECT r.id, r.presentation_id, r.reason, r.reporter_email, r.category,
+                    r.status, r.created_at, p.title, p.user_id
                FROM reports r JOIN presentations p ON p.id = r.presentation_id
               ORDER BY (r.status = \'open\') DESC, r.id DESC LIMIT 200'
         )->fetchAll();

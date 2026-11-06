@@ -23,6 +23,24 @@ if ($reason === '' || strlen($reason) < 10) {
 }
 $reason = tl_str_limit($reason, 1000);
 
+// Optionale Angaben: Kategorie (Whitelist) und Melder-E-Mail (für Rückfragen).
+$catLabels = [
+    'urheberrecht'    => 'Urheberrecht',
+    'persoenlichkeit' => 'Persönlichkeitsrecht / Privatsphäre',
+    'gewalt_hass'     => 'Gewalt / Hass',
+    'spam'            => 'Spam / Irreführung',
+    'sonstiges'       => 'Sonstiges',
+];
+$category = (string) ($input['category'] ?? '');
+if (!isset($catLabels[$category])) {
+    $category = '';
+}
+$reporterEmail = trim((string) ($input['email'] ?? ''));
+if ($reporterEmail !== '' && !filter_var($reporterEmail, FILTER_VALIDATE_EMAIL)) {
+    json_error('Bitte eine gültige E-Mail angeben oder das Feld leer lassen.');
+}
+$reporterEmail = tl_str_limit($reporterEmail, 254);
+
 $st = db()->prepare('SELECT id, title FROM presentations WHERE share_token = ?');
 $st->execute([$token]);
 $pres = $st->fetch();
@@ -33,8 +51,13 @@ if (!$pres) {
 $pid   = (int) $pres['id'];
 $title = (string) $pres['title'];
 
-$st = db()->prepare('INSERT INTO reports (presentation_id, reason, status, created_at) VALUES (?, ?, ?, ?)');
-$st->execute([$pid, $reason, 'open', now_iso()]);
+$st = db()->prepare('INSERT INTO reports (presentation_id, reason, reporter_email, category, status, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+$st->execute([
+    $pid, $reason,
+    $reporterEmail !== '' ? $reporterEmail : null,
+    $category !== '' ? $category : null,
+    'open', now_iso(),
+]);
 tl_rate_fail($rlKey, 3); // jede Meldung zählt gegen das IP-Limit (3 pro Fenster)
 
 // Admins per E-Mail benachrichtigen (nur wenn SMTP konfiguriert ist;
@@ -46,7 +69,10 @@ if (tl_mail_configured()) {
                       ->fetchAll(PDO::FETCH_COLUMN);
         if ($admins) {
             $body = "Eine neue Inhaltsmeldung ist eingegangen.\n\n"
-                  . 'Präsentation: #' . $pid . ($title !== '' ? ' — ' . $title : '') . "\n\n"
+                  . 'Präsentation: #' . $pid . ($title !== '' ? ' — ' . $title : '') . "\n"
+                  . 'Kategorie: ' . ($category !== '' ? $catLabels[$category] : '(keine Angabe)') . "\n"
+                  . 'Melder-E-Mail: ' . ($reporterEmail !== '' ? $reporterEmail : '(nicht angegeben)') . "\n"
+                  . 'Geteilte Tour: ' . tl_base_url() . '/app/view.php?t=' . $token . "\n\n"
                   . "Begründung der Meldung:\n" . $reason . "\n\n"
                   . "Zur Prüfung im Admin-Bereich:\n" . tl_base_url() . "/app/admin.php\n\n"
                   . "-- Tourlocate";

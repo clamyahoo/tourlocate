@@ -121,23 +121,59 @@ $preview = isset($_GET['preview']);
   var activeState = false;
   var pausedState = false;
 
+  // Weiches Gleiten statt Springen: zwischen zwei empfangenen Positionen
+  // wird der Punkt per requestAnimationFrame interpoliert (reine Darstellung,
+  // kostet den Sender keinen zusätzlichen Akku/Traffic).
+  var curLL = null, fromLL = null, target = null;
+  var fromAcc = 0, targetAcc = 0;
+  var animStart = 0, animDur = 1500, raf = 0, lastPlace = 0;
+  function lerp(a, b, t){ return a + (b - a) * t; }
+
+  function animTick(){
+    raf = 0;
+    if (!dot || !target) return;
+    var now = performance.now();
+    var t = animDur > 0 ? Math.min(1, (now - animStart) / animDur) : 1;
+    curLL = [lerp(fromLL[0], target[0], t), lerp(fromLL[1], target[1], t)];
+    dot.setLatLng(curLL);
+    if (ring){ ring.setLatLng(curLL); ring.setRadius(lerp(fromAcc, targetAcc, t)); }
+    if (t < 1) raf = requestAnimationFrame(animTick);
+  }
+
   function place(lat, lng, acc){
-    var ll = [lat, lng];
+    var tgt = [lat, lng];
     if (!dot){
-      dot = L.circleMarker(ll,{radius:7,color:'#fff',weight:2,fillColor:'#2b6cb0',fillOpacity:1,interactive:false}).addTo(map);
-      ring = L.circle(ll,{radius:acc||0,color:'#2b6cb0',weight:1,fillColor:'#2b6cb0',fillOpacity:0.12,interactive:false}).addTo(map);
-    } else {
-      dot.setLatLng(ll);
-      ring.setLatLng(ll).setRadius(acc||0);
+      dot = L.circleMarker(tgt,{radius:7,color:'#fff',weight:2,fillColor:'#2b6cb0',fillOpacity:1,interactive:false}).addTo(map);
+      ring = L.circle(tgt,{radius:acc||0,color:'#2b6cb0',weight:1,fillColor:'#2b6cb0',fillOpacity:0.12,interactive:false}).addTo(map);
+      curLL = tgt; target = tgt; targetAcc = acc || 0;
+      if (firstFix){ map.setView(tgt, 16); firstFix=false; }
+      return;
     }
-    if (firstFix){ map.setView(ll, 16); firstFix=false; }
+    // Unveränderte Position → nicht neu animieren
+    if (target && Math.abs(target[0]-lat) < 1e-7 && Math.abs(target[1]-lng) < 1e-7){
+      targetAcc = acc != null ? acc : targetAcc;
+      return;
+    }
+    var now = performance.now();
+    // Animationsdauer ~ Abstand zwischen zwei Updates (begrenzt), damit der
+    // Punkt etwa im Takt der echten Positionen gleitet.
+    animDur = lastPlace ? Math.min(4000, Math.max(800, now - lastPlace)) : 1500;
+    lastPlace = now;
+    fromLL = curLL ? curLL.slice() : tgt.slice();
+    fromAcc = ring ? ring.getRadius() : (acc || 0);
+    target = tgt;
+    targetAcc = acc != null ? acc : targetAcc;
+    animStart = now;
+    if (!raf) raf = requestAnimationFrame(animTick);
   }
 
   // Punkt + Kreis entfernen (wenn das Teilen endet, soll keine Position
   // mehr auf der Karte stehenbleiben)
   function clearDot(){
+    if (raf){ cancelAnimationFrame(raf); raf = 0; }
     if (dot){ map.removeLayer(dot); dot=null; }
     if (ring){ map.removeLayer(ring); ring=null; }
+    curLL = null; target = null; lastPlace = 0;
     firstFix=true;
   }
 
@@ -178,7 +214,7 @@ $preview = isset($_GET['preview']);
   }
 
   poll();
-  setInterval(poll, 5000);
+  setInterval(poll, 3000);
   // Sekundentakt nur für die Frische-Anzeige (ohne neue Anfrage);
   // im Pause-Zustand nicht überschreiben.
   setInterval(function(){ if (activeState && !pausedState && lastAt) renderFreshness(lastAt); }, 1000);

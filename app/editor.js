@@ -55,6 +55,11 @@ async function loadPresentation(map) {
   if ($('lineModeSel')) $('lineModeSel').value = P.line_mode;
   if ($('profileSel')) { $('profileSel').value = P.profile; $('profileSel').disabled = P.line_mode !== 'route'; }
 
+  // Download-Button-Freigabe dieser Präsentation übernehmen
+  const allowDl = !!(P.data && P.data.allowDownload);
+  setSetting('imgDownload', allowDl ? 'on' : 'off');
+  if ($('imgDownloadChk')) $('imgDownloadChk').checked = allowDl;
+
   // Aufgezeichnete Strecke (Track-Modus) VOR den POIs setzen, damit das
   // Einrasten/Routing beim Anlegen schon greift.
   map.state.track = (P.data && Array.isArray(P.data.track)) ? P.data.track : null;
@@ -87,7 +92,7 @@ async function save(map) {
     // Routen-Geometrie mitspeichern, damit die öffentliche Ansicht bei
     // "Route" die echte Strecke zeigt (ohne dort neu routen zu müssen).
     // track = importierte Aufzeichnung (für den Track-Modus, editierbar).
-    data: { pois, route: map.state.routeCoords || [], track: map.state.track || null },
+    data: { pois, route: map.state.routeCoords || [], track: map.state.track || null, allowDownload: getSetting('imgDownload') === 'on' },
     csrf
   };
   const res = await fetch('api/presentations.php?action=save', {

@@ -315,8 +315,13 @@
     if (_bgPlugin !== undefined) return _bgPlugin;
     const Cap = window.Capacitor;
     try {
-      _bgPlugin = (Cap && Cap.isNativePlatform && Cap.isNativePlatform() && Cap.registerPlugin)
-        ? Cap.registerPlugin('BackgroundGeolocation') : null;
+      // Zugriff über den vom nativen Bridge bereitgestellten Plugins-Proxy
+      // (wie bei Gallery). window.Capacitor.registerPlugin existiert im
+      // no-build-Kontext NICHT — deshalb lief bisher immer der watchPosition-
+      // Fallback (am Gerät per DevTools verifiziert).
+      _bgPlugin = (Cap && Cap.isNativePlatform && Cap.isNativePlatform()
+                   && Cap.Plugins && Cap.Plugins.BackgroundGeolocation)
+        ? Cap.Plugins.BackgroundGeolocation : null;
     } catch (e) { _bgPlugin = null; }
     return _bgPlugin;
   }

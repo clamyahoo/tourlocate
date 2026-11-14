@@ -18,7 +18,8 @@
 
   let token = null;
   let expiresAt = null;
-  let watchId = null;
+  let watchId = null;          // Browser-watchPosition-ID
+  let bgWatcherId = null;      // ID des nativen Hintergrund-Watchers (Capacitor-App)
   let lastPing = 0;            // Drossel: höchstens alle 3 Sek. senden
   let bannerTimer = null;
   let geoProblem = null;      // Text, falls die Ortung blockiert/fehlt
@@ -294,22 +295,73 @@
   }
 
   function onGeoError(err) {
-    geoProblem = (err && err.code === err.PERMISSION_DENIED)
+    // Fehlerform je nach Quelle: Browser-Geolocation (numerischer code mit
+    // PERMISSION_DENIED) ODER natives Plugin (code === 'NOT_AUTHORIZED').
+    const denied = err && (
+      (typeof err.code === 'number' && err.code === err.PERMISSION_DENIED) ||
+      err.code === 'NOT_AUTHORIZED'
+    );
+    geoProblem = denied
       ? 'Ortung blockiert — Standort wird nicht gesendet'
       : 'Standort nicht verfügbar';
     updateBanner();
   }
 
-  function startWatch() {
-    if (!navigator.geolocation || watchId !== null) return;
+  // Natives Hintergrund-Standort-Plugin — nur in der Capacitor-App vorhanden.
+  // Liefert über einen Vordergrunddienst (mit Benachrichtigung) auch bei
+  // gesperrtem Display Positionen; im Browser gibt es das nicht → null.
+  let _bgPlugin; // undefined = noch nicht geprüft
+  function nativeBg() {
+    if (_bgPlugin !== undefined) return _bgPlugin;
+    const Cap = window.Capacitor;
+    try {
+      _bgPlugin = (Cap && Cap.isNativePlatform && Cap.isNativePlatform() && Cap.registerPlugin)
+        ? Cap.registerPlugin('BackgroundGeolocation') : null;
+    } catch (e) { _bgPlugin = null; }
+    return _bgPlugin;
+  }
+
+  async function startWatch() {
+    if (watchId !== null || bgWatcherId !== null) return;
     lastPing = 0;
+
+    // Bevorzugt nativer Hintergrund-Watcher (läuft bei gesperrtem Display weiter).
+    const BG = nativeBg();
+    if (BG) {
+      try {
+        bgWatcherId = await BG.addWatcher({
+          backgroundTitle: 'Tourlocate',
+          backgroundMessage: 'Dein Standort wird gerade geteilt',
+          requestPermissions: true,
+          distanceFilter: 10
+        }, function (location, error) {
+          if (error) { onGeoError(error); return; }
+          if (location) ping({ coords: {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            accuracy: location.accuracy
+          } });
+        });
+        return;
+      } catch (e) {
+        bgWatcherId = null; // Fallback auf Browser-Geolocation
+      }
+    }
+
+    if (!navigator.geolocation) return;
     watchId = navigator.geolocation.watchPosition(ping, onGeoError, {
       enableHighAccuracy: true, maximumAge: 5000, timeout: 20000
     });
   }
 
-  function stopWatch() {
+  async function stopWatch() {
     if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    if (bgWatcherId !== null) {
+      const BG = nativeBg();
+      const id = bgWatcherId;
+      bgWatcherId = null;
+      try { if (BG) await BG.removeWatcher({ id }); } catch (e) {}
+    }
   }
 
   function begin(tok, exp, isPaused) {

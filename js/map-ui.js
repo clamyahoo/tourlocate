@@ -185,6 +185,81 @@ export function openLightbox(href, title = '') {
   requestAnimationFrame(() => { pre.src = href; });
 }
 
+// ==================== Kurz-Einblendung (Toast) ====================
+// Schlichte, selbst schließende Meldung unten mittig. Optional mit einer
+// Aktion (z. B. „Nicht mehr anzeigen"). Nur DOM + Inline-Styles, kein CSS nötig.
+let __toastEl = null, __toastTimer = null;
+function showToast(text, { actionLabel = '', onAction = null, ms = 4000 } = {}) {
+  if (!__toastEl) {
+    __toastEl = document.createElement('div');
+    __toastEl.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:10001;'
+      + 'max-width:90vw;display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;'
+      + 'background:rgba(30,30,30,.94);color:#fff;font:500 14px/1.3 system-ui,sans-serif;'
+      + 'box-shadow:0 2px 12px rgba(0,0,0,.35)';
+    document.body.appendChild(__toastEl);
+  }
+  __toastEl.textContent = '';
+  const span = document.createElement('span');
+  span.textContent = text;
+  __toastEl.appendChild(span);
+  if (actionLabel && onAction) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = actionLabel;
+    btn.style.cssText = 'background:none;border:none;color:#7fb2ff;font:600 14px/1.3 system-ui,sans-serif;'
+      + 'cursor:pointer;padding:0;white-space:nowrap';
+    btn.onclick = () => { try { onAction(); } finally { hideToast(); } };
+    __toastEl.appendChild(btn);
+  }
+  __toastEl.style.display = 'flex';
+  clearTimeout(__toastTimer);
+  __toastTimer = setTimeout(hideToast, ms);
+}
+function hideToast() {
+  clearTimeout(__toastTimer);
+  if (__toastEl) __toastEl.style.display = 'none';
+}
+
+// Original-Foto einer App-Kamera-Aufnahme in die Geräte-Galerie (Album
+// „Tourlocate") sichern. Greift NUR in der nativen Capacitor-App — im Browser
+// ist window.Capacitor nicht vorhanden, dann passiert nichts. Best effort:
+// Fehler brechen den Foto-/POI-Ablauf nicht ab.
+const ALBUM_NAME = 'Tourlocate';
+async function saveCaptureToAlbum(file) {
+  const Cap = window.Capacitor;
+  const Media = Cap?.Plugins?.Media;
+  if (!Cap?.isNativePlatform?.() || !Media) return; // nur in der App
+  try {
+    // Original-Bytes als Base64-DataURL (bewusst OHNE Downscale/HEIC-Umwandlung
+    // — die Galerie soll das echte Foto mit EXIF-GPS/Datum bekommen).
+    const dataUrl = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = () => rej(r.error || new Error('read-failed'));
+      r.readAsDataURL(file);
+    });
+    // Album „Tourlocate" sicherstellen (auf Android ist ein Album Pflicht).
+    const findAlbum = async () =>
+      (await Media.getAlbums()).albums.find(a => a.name === ALBUM_NAME);
+    let album = await findAlbum();
+    if (!album) { await Media.createAlbum({ name: ALBUM_NAME }); album = await findAlbum(); }
+    await Media.savePhoto({
+      path: dataUrl,
+      albumIdentifier: album?.identifier,
+      fileName: 'tourlocate-' + Date.now()
+    });
+    if (getSetting('albumConfirm') !== 'off') {
+      showToast(t('albumSaved', { album: ALBUM_NAME }), {
+        actionLabel: t('albumDontShow'),
+        onAction: () => setSetting('albumConfirm', 'off')
+      });
+    }
+  } catch (e) {
+    console.error('saveCaptureToAlbum:', e);
+    showToast(t('albumSaveError'));
+  }
+}
+
 // ==================== Hilfe-Overlay ====================
 function openHelp() {
   document.getElementById('tl-help')?.remove();
@@ -519,6 +594,10 @@ export function setupUI(map) {
   // der EXIF-Daten beim späteren Teilen/Export spielt daher keine Rolle.
   const capturePhotoHere = () => {
     captureImage(async file => {
+      // Aufgenommenes Original (best effort) in die Galerie sichern — läuft im
+      // Hintergrund, unabhängig vom POI-Ablauf, und nur in der nativen App.
+      saveCaptureToAlbum(file);
+
       const ri = $('routeinfo');
       let lat = null, lng = null, exifDate = null;
 

@@ -79,7 +79,11 @@ function require_csrf(array $input): void
 function current_user_id(): ?int
 {
     tl_session_start();
-    return isset($_SESSION['uid']) ? (int) $_SESSION['uid'] : null;
+    if (isset($_SESSION['uid'])) {
+        return (int) $_SESSION['uid'];
+    }
+    // Kein aktiver Login → „Eingeloggt bleiben"-Cookie prüfen (Auto-Login).
+    return remember_try_login();
 }
 
 function require_login(): int
@@ -143,6 +147,73 @@ function logout_user(): void
     tl_session_start();
     $_SESSION = [];
     session_destroy();
+}
+
+// ---- „Eingeloggt bleiben" (persistentes Login per Cookie) -------------
+// 30-Tage-Token: im Cookie der Klartext, in der DB nur dessen SHA-256-Hash.
+// Ausgegeben bei jedem erfolgreichen Login; gelöscht beim Abmelden.
+
+function remember_issue(int $uid): void
+{
+    $raw = bin2hex(random_bytes(32));           // 64 Hex-Zeichen
+    $expiresTs = time() + 30 * 86400;           // 30 Tage
+    // Housekeeping: abgelaufene Tokens entfernen
+    db()->prepare('DELETE FROM remember_tokens WHERE expires_at <= ?')->execute([now_iso()]);
+    db()->prepare(
+        'INSERT INTO remember_tokens (user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)'
+    )->execute([$uid, hash('sha256', $raw), gmdate('Y-m-d\TH:i:s\Z', $expiresTs), now_iso()]);
+    tl_remember_setcookie($raw, $expiresTs);
+}
+
+// Prüft das Cookie und stellt bei gültigem Token die Session wieder her.
+// Schreibt bewusst KEINE Header (kein setcookie), damit es gefahrlos früh in
+// current_user_id() laufen kann. Gibt die User-ID zurück oder null.
+function remember_try_login(): ?int
+{
+    $raw = $_COOKIE['tl_remember'] ?? '';
+    if (!is_string($raw) || !preg_match('/^[a-f0-9]{64}$/', $raw)) {
+        return null;
+    }
+    $hash = hash('sha256', $raw);
+    $st = db()->prepare('SELECT user_id, expires_at FROM remember_tokens WHERE token_hash = ?');
+    $st->execute([$hash]);
+    $row = $st->fetch();
+    if (!$row || strcmp((string) $row['expires_at'], now_iso()) <= 0) {
+        return null; // unbekannt oder abgelaufen
+    }
+    $uid = (int) $row['user_id'];
+    // Gesperrte Konten NICHT automatisch anmelden.
+    $chk = db()->prepare('SELECT blocked FROM users WHERE id = ?');
+    $chk->execute([$uid]);
+    $blocked = $chk->fetchColumn();
+    if ($blocked === false || (int) $blocked === 1) {
+        return null;
+    }
+    $_SESSION['uid'] = $uid; // Session wiederherstellen
+    return $uid;
+}
+
+// Beim Abmelden: Token löschen (DB) + Cookie entfernen → nichts bleibt zurück.
+function remember_clear(): void
+{
+    $raw = $_COOKIE['tl_remember'] ?? '';
+    if (is_string($raw) && preg_match('/^[a-f0-9]{64}$/', $raw)) {
+        db()->prepare('DELETE FROM remember_tokens WHERE token_hash = ?')
+            ->execute([hash('sha256', $raw)]);
+    }
+    tl_remember_setcookie('', time() - 3600);
+    unset($_COOKIE['tl_remember']);
+}
+
+function tl_remember_setcookie(string $raw, int $expiresTs): void
+{
+    setcookie('tl_remember', $raw, [
+        'expires'  => $expiresTs,
+        'path'     => '/',
+        'httponly' => true,
+        'samesite' => 'Lax',
+        'secure'   => (bool) tl_config()['cookie_secure'],
+    ]);
 }
 
 function now_iso(): string

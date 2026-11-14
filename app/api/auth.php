@@ -45,6 +45,7 @@ switch ($action) {
             db()->prepare('UPDATE live_shares SET active = 0 WHERE user_id = ? AND active = 1')
                 ->execute([$uidLogout]);
         }
+        remember_clear(); // „Eingeloggt bleiben"-Token + Cookie entfernen
         logout_user();
         json_out(['ok' => true]);
         break;
@@ -246,6 +247,7 @@ function register(array $input): void
             ->execute([$newUid, now_iso(), (int) $invite['id']]);
     }
     login_user($newUid);
+    remember_issue($newUid); // „Eingeloggt bleiben" (30 Tage)
     json_out(['ok' => true, 'user' => ['email' => $email], 'csrf' => csrf_token()]);
 }
 
@@ -305,6 +307,7 @@ function login(array $input): void
     }
 
     login_user((int) $user['id']);
+    remember_issue((int) $user['id']); // „Eingeloggt bleiben" (30 Tage)
     json_out(['ok' => true, 'user' => ['id' => (int) $user['id'], 'email' => $user['email']], 'csrf' => csrf_token()]);
 }
 
@@ -358,6 +361,7 @@ function totp_login(array $input): void
 
     unset($_SESSION['2fa_pending_uid']);
     login_user($uid);
+    remember_issue($uid); // „Eingeloggt bleiben" (30 Tage)
     json_out(['ok' => true, 'user' => ['id' => $uid, 'email' => $user['email']],
               'csrf' => csrf_token(), 'usedRecovery' => $okRecovery]);
 }

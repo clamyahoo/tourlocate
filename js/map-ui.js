@@ -220,32 +220,29 @@ function hideToast() {
   if (__toastEl) __toastEl.style.display = 'none';
 }
 
-// Original-Foto einer App-Kamera-Aufnahme in die Geräte-Galerie (Album
-// „Tourlocate") sichern. Greift NUR in der nativen Capacitor-App — im Browser
-// ist window.Capacitor nicht vorhanden, dann passiert nichts. Best effort:
-// Fehler brechen den Foto-/POI-Ablauf nicht ab.
+// Original-Foto einer App-Kamera-Aufnahme in die öffentliche Galerie
+// (DCIM/„Tourlocate") sichern — über unser projekteigenes natives Gallery-
+// Plugin (tourlocate-android). Greift NUR in der nativen Capacitor-App — im
+// Browser ist window.Capacitor nicht vorhanden, dann passiert nichts. Best
+// effort: Fehler brechen den Foto-/POI-Ablauf nicht ab.
 const ALBUM_NAME = 'Tourlocate';
 async function saveCaptureToAlbum(file) {
   const Cap = window.Capacitor;
-  const Media = Cap?.Plugins?.Media;
-  if (!Cap?.isNativePlatform?.() || !Media) return; // nur in der App
+  const Gallery = Cap?.Plugins?.Gallery;
+  if (!Cap?.isNativePlatform?.() || !Gallery) return; // nur in der App
   try {
     // Original-Bytes als Base64-DataURL (bewusst OHNE Downscale/HEIC-Umwandlung
-    // — die Galerie soll das echte Foto mit EXIF-GPS/Datum bekommen).
+    // — die Galerie soll das echte Foto mit EXIF-GPS/Datum bekommen). Das native
+    // Plugin schneidet das „data:"-Präfix selbst ab und legt DCIM/<album> an.
     const dataUrl = await new Promise((res, rej) => {
       const r = new FileReader();
       r.onload = () => res(r.result);
       r.onerror = () => rej(r.error || new Error('read-failed'));
       r.readAsDataURL(file);
     });
-    // Album „Tourlocate" sicherstellen (auf Android ist ein Album Pflicht).
-    const findAlbum = async () =>
-      (await Media.getAlbums()).albums.find(a => a.name === ALBUM_NAME);
-    let album = await findAlbum();
-    if (!album) { await Media.createAlbum({ name: ALBUM_NAME }); album = await findAlbum(); }
-    await Media.savePhoto({
-      path: dataUrl,
-      albumIdentifier: album?.identifier,
+    await Gallery.savePhoto({
+      data: dataUrl,
+      album: ALBUM_NAME,
       fileName: 'tourlocate-' + Date.now()
     });
     if (getSetting('albumConfirm') !== 'off') {

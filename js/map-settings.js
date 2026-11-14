@@ -6,6 +6,7 @@ const DEFAULTS = {
   profile: 'car',       // 'car' | 'bike' | 'foot'
   imgQuality: 'medium', // 'small' | 'medium' | 'large' | 'original'
   sidebar: '',          // '' = automatisch (Desktop offen, mobil zu), 'open' | 'closed'
+  albumConfirm: 'on',   // 'on' | 'off' — Bestätigung nach „Foto ins Album gespeichert" (nur native App)
   webdavUrl: '',        // WebDAV-Ordner-URL (z. B. Nextcloud)
   webdavUser: '',
   webdavPass: ''        // Hinweis: liegt im localStorage — App-Passwort verwenden

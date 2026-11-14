@@ -98,6 +98,7 @@ $viewData = [
     'lineMode' => $P['line_mode'],
     'pois'     => $data['pois'] ?? [],
     'route'    => $data['route'] ?? [],
+    'allowDownload' => !empty($data['allowDownload']),
 ];
 $json = json_encode($viewData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 $json = str_replace('<', '\\u003c', $json); // nie </script> in der Payload
@@ -203,14 +204,29 @@ $json = str_replace('<', '\\u003c', $json); // nie </script> in der Payload
 
   // Mini-Lightbox
   var W=document.createElement('div');
-  W.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.92);z-index:99999;padding:4vh';
-  var I=document.createElement('img'); I.style.cssText='max-width:92vw;max-height:92vh;border-radius:10px';
-  W.appendChild(I); document.body.appendChild(W);
+  W.style.cssText='position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(0,0,0,.92);z-index:99999;padding:4vh';
+  var I=document.createElement('img'); I.style.cssText='max-width:92vw;max-height:86vh;border-radius:10px';
+  W.appendChild(I);
+  if (D.allowDownload) {
+    var DLB=document.createElement('button');
+    DLB.type='button'; DLB.textContent='⤓ Bild herunterladen';
+    DLB.style.cssText='padding:7px 14px;border:0;border-radius:6px;background:#2b6cb0;color:#fff;font:600 13px/1 system-ui,sans-serif;cursor:pointer';
+    DLB.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      if(!I.src) return;
+      var a=document.createElement('a'); a.href=I.src;
+      var nm=(I.alt||'tourlocate-bild').replace(/[^\w.-]+/g,'_').slice(0,60)||'tourlocate-bild';
+      if(!/\.(jpe?g|png|webp)$/i.test(nm)) nm+='.jpg';
+      a.download=nm; document.body.appendChild(a); a.click(); a.remove();
+    });
+    W.appendChild(DLB);
+  }
+  document.body.appendChild(W);
   W.addEventListener('click', function(){ W.style.display='none'; I.removeAttribute('src'); });
   document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ W.style.display='none'; } });
   document.addEventListener('click', function(e){
     var b=e.target.closest && e.target.closest('button.thumb'); if(!b) return;
-    I.src=b.getAttribute('data-img'); W.style.display='flex';
+    I.src=b.getAttribute('data-img'); I.alt=b.getAttribute('data-title')||''; W.style.display='flex';
   }, true);
 
   var markers=L.featureGroup().addTo(map);
@@ -222,7 +238,7 @@ $json = str_replace('<', '\\u003c', $json); // nie </script> in der Payload
     if (p.createdAt){ var d=new Date(p.createdAt); if(!isNaN(d)) dateHtml='<div class="tl-date">'+esc(d.toLocaleString('de-DE'))+'</div>'; }
     var _lu=safeUrl(p.link);
     var linkHtml=_lu?'<div><a href="'+esc(_lu)+'" target="_blank" rel="noopener">'+esc(p.linkText||'Link')+'</a></div>':'';
-    var imgHtml=p.img?'<div><button type="button" class="thumb" data-img="'+esc(p.img)+'"><span class="tl-thumb"><img src="'+esc(p.img)+'" alt=""></span></button></div>':'';
+    var imgHtml=p.img?'<div><button type="button" class="thumb" data-img="'+esc(p.img)+'" data-title="'+esc(title)+'"><span class="tl-thumb"><img src="'+esc(p.img)+'" alt=""></span></button></div>':'';
     m.bindPopup('<div class="tl-card"><strong>'+esc(title)+'</strong>'+dateHtml+linkHtml+imgHtml+'</div>');
   });
 

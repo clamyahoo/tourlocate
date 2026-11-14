@@ -4,7 +4,7 @@
 import { IMG_QUALITIES } from './map-config.js';
 import { getSetting, setSetting } from './map-settings.js';
 import { t, getLang, setLang, applyI18n } from './map-i18n.js';
-import { fileToDataURL } from './map-utils.js';
+import { fileToDataURL, triggerBlobDownload } from './map-utils.js';
 import { applyRoutingSettings, setRouteWaypoints, renderRouteInfo } from './map-core.js';
 import { bindPoiPopup, createPoi, renumberAndRoute, removePoi, removeLastPoi, clearPois, sortPois, pushUndo, popUndo, undo } from './map-pois.js';
 import { importFromWebdav, webdavErrorMessage } from './map-webdav.js';
@@ -131,9 +131,18 @@ function ensureLightbox() {
   const cap = document.createElement('figcaption');
   cap.style.cssText = 'color:#fff;text-align:center;margin-top:10px;font:500 14px/1.4 system-ui,sans-serif';
 
+  // Optionaler Download-Button (nur sichtbar, wenn die Einstellung an ist).
+  // stopPropagation, damit der Klick nicht das Overlay schließt.
+  const dl = document.createElement('button');
+  dl.type = 'button';
+  dl.style.cssText = 'display:none;margin:10px auto 0;padding:7px 14px;border:0;border-radius:6px;'
+    + 'background:#2b6cb0;color:#fff;font:600 13px/1 system-ui,sans-serif;cursor:pointer';
+  dl.addEventListener('click', ev => { ev.stopPropagation(); if (LB.dlHandler) LB.dlHandler(); });
+
   fig.appendChild(spinner);
   fig.appendChild(img);
   fig.appendChild(cap);
+  fig.appendChild(dl);
   overlay.appendChild(fig);
   document.body.appendChild(overlay);
 
@@ -151,7 +160,21 @@ function ensureLightbox() {
     if (overlay.style.display !== 'none' && e.key === 'Escape') close();
   });
 
-  LB = { overlay, img, cap, spinner, last: null };
+  LB = { overlay, img, cap, spinner, dl, last: null, dlHandler: null };
+}
+
+// Lädt das gezeigte Bild herunter (data-URL ODER Server-URL — fetch kann beides).
+async function downloadLightboxImage(href, title) {
+  try {
+    const resp = await fetch(href);
+    const blob = await resp.blob();
+    let name = (title || 'tourlocate-bild').replace(/[^\w.-]+/g, '_').slice(0, 60) || 'tourlocate-bild';
+    if (!/\.(jpe?g|png|webp)$/i.test(name)) name += '.jpg';
+    triggerBlobDownload(name, blob);
+  } catch (e) {
+    console.error('downloadLightboxImage:', e);
+    showToast(t('imageLoadError'));
+  }
 }
 
 export function openLightbox(href, title = '') {
@@ -160,6 +183,15 @@ export function openLightbox(href, title = '') {
   LB.spinner.textContent = t('loadingImage');
   LB.img.style.visibility = 'hidden';
   LB.cap.textContent = title || '';
+  // Download-Button je nach Einstellung ein-/ausblenden und verdrahten.
+  if (getSetting('imgDownload') === 'on') {
+    LB.dl.textContent = '⤓ ' + t('imgDownloadBtn');
+    LB.dl.style.display = 'block';
+    LB.dlHandler = () => downloadLightboxImage(href, title);
+  } else {
+    LB.dl.style.display = 'none';
+    LB.dlHandler = null;
+  }
   LB.overlay.style.display = 'flex';
 
   // Karten-Gesten sperren, Zustand zum Wiederherstellen merken
@@ -525,6 +557,11 @@ export function setupUI(map) {
     // Bildqualität
     $('imgQualitySel').onchange = e => setSetting('imgQuality', e.target.value);
 
+    // Download-Button für Einzelbilder in der Lightbox (wirkt auch beim Teilen
+    // der Multi-User-Präsentation und im HTML-/ZIP-Export).
+    const dlChk = $('imgDownloadChk');
+    if (dlChk) dlChk.onchange = e => setSetting('imgDownload', e.target.checked ? 'on' : 'off');
+
     // Sprache
     $('langBtn').onclick = () => {
       setLang(getLang() === 'de' ? 'en' : 'de');
@@ -734,6 +771,7 @@ export function setupUI(map) {
   $('lineModeSel').value = getSetting('lineMode');
   $('profileSel').value = getSetting('profile');
   $('imgQualitySel').value = getSetting('imgQuality');
+  if ($('imgDownloadChk')) $('imgDownloadChk').checked = getSetting('imgDownload') === 'on';
 
   applyI18n();
   updateLangBtn();

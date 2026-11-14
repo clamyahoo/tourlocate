@@ -469,10 +469,12 @@ function buildExportHtml(map, snapshot, assets, { imageFolder, imgMap }) {
     TILE_ATTR: (base?.getAttribution && base.getAttribution()) || '© OpenStreetMap',
     TILE_MAXZ: base?.options?.maxZoom || 19,
     SNAPSHOT: snapshot || null,
+    ALLOW_DOWNLOAD: getSetting('imgDownload') === 'on',
     STRINGS: {
       total: t('total', { km: '{km}' }),
       mapError: t('exportMapError'),
-      leafletError: t('exportLeafletError')
+      leafletError: t('exportLeafletError'),
+      download: t('imgDownloadBtn')
     }
   };
   // "<" escapen, damit in der Payload nie "</script>" entsteht
@@ -510,12 +512,32 @@ ${leafletCssBlock}
 ${leafletJsBlock}
 <script>
 (function(){
+  // Konfiguration (für Download-Button) einmal vorab lesen.
+  var _cfgEl=document.getElementById('tl-data');
+  var _cfg=_cfgEl?JSON.parse(_cfgEl.textContent):{};
+  var ALLOW_DL=!!_cfg.ALLOW_DOWNLOAD;
+  var DL_LABEL=(_cfg.STRINGS&&_cfg.STRINGS.download)||'Download';
+
   // Mini-Lightbox
   var W=document.createElement('div');
-  W.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.92);z-index:99999;padding:4vh';
+  W.style.cssText='position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(0,0,0,.92);z-index:99999;padding:4vh';
   var I=document.createElement('img');
-  I.style.cssText='max-width:92vw;max-height:92vh;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5)';
+  I.style.cssText='max-width:92vw;max-height:86vh;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5)';
   W.appendChild(I);
+  if(ALLOW_DL){
+    var DLB=document.createElement('button');
+    DLB.type='button'; DLB.textContent='\\u2913 '+DL_LABEL;
+    DLB.style.cssText='padding:7px 14px;border:0;border-radius:6px;background:#2b6cb0;color:#fff;font:600 13px/1 system-ui,sans-serif;cursor:pointer';
+    DLB.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      if(!I.src) return;
+      var a=document.createElement('a'); a.href=I.src;
+      var nm=(I.alt||'tourlocate-bild').replace(/[^\\w.-]+/g,'_').slice(0,60)||'tourlocate-bild';
+      if(!/\\.(jpe?g|png|webp)$/i.test(nm)) nm+='.jpg';
+      a.download=nm; document.body.appendChild(a); a.click(); a.remove();
+    });
+    W.appendChild(DLB);
+  }
   document.body.appendChild(W);
   function hide(){ W.style.display='none'; I.removeAttribute('src'); }
   W.addEventListener('click', hide, {passive:true});

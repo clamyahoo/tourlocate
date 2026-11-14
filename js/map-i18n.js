@@ -74,6 +74,7 @@ const STRINGS = {
     searchPlaceholder: 'Ort suchen…',
     locate: 'Mein Standort',
     locateError: 'Standort konnte nicht ermittelt werden. Ist die Ortungsfreigabe im Browser erteilt?',
+    locateTimeout: 'Standort konnte nicht ermittelt werden – kein GPS-Empfang?',
     // POI / Dialog
     station: 'Station',
     newStation: 'Neue Station',
@@ -191,6 +192,7 @@ const STRINGS = {
     searchPlaceholder: 'Search place…',
     locate: 'My location',
     locateError: 'Could not determine your location. Is location permission granted in the browser?',
+    locateTimeout: 'Could not determine your location – no GPS reception?',
     station: 'Station',
     newStation: 'New station',
     edit: 'Edit',

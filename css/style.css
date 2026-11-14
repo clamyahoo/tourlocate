@@ -40,6 +40,9 @@ body:not(.sidebar-closed) #sidebarToggle{ display:none; }
   gap:8px; margin:6px 0;
 }
 .sb-field select, .sb-field button{ min-width:110px; }
+/* Checkbox-Zeile: Kästchen direkt links vor der Beschriftung */
+.sb-check{ display:flex; align-items:center; gap:8px; margin:6px 0; cursor:pointer; }
+.sb-check input{ flex:none; margin:0; }
 .sb-field-col{ display:flex; flex-direction:column; gap:2px; margin:6px 0; }
 .sb-field-col input{
   width:100%; box-sizing:border-box; padding:5px 6px;

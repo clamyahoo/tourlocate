@@ -158,9 +158,7 @@ $csrf = csrf_token();
         <div class="sb-row">
           <button id="exportImsBtn" disabled data-i18n="exportIms" title="IMS Content Package (für Moodle u. a. Lernplattformen)">IMS-Paket (Moodle)</button>
         </div>
-        <label class="sb-field"><span data-i18n="imgDownloadLabel">Download-Button für Einzelbilder</span>
-          <input type="checkbox" id="imgDownloadChk">
-        </label>
+        <label class="sb-check"><input type="checkbox" id="imgDownloadChk"><span data-i18n="imgDownloadLabel">Download-Button für Einzelbilder</span></label>
       </details>
 
       <details class="sb-sec">

@@ -469,7 +469,9 @@ function buildExportHtml(map, snapshot, assets, { imageFolder, imgMap }) {
     TILE_ATTR: (base?.getAttribution && base.getAttribution()) || '© OpenStreetMap',
     TILE_MAXZ: base?.options?.maxZoom || 19,
     SNAPSHOT: snapshot || null,
-    ALLOW_DOWNLOAD: getSetting('imgDownload') === 'on',
+    // Download-Button nur im Ein-Datei-HTML, nicht im ZIP — dort liegen die
+    // Bilder ohnehin als Dateien bei (imageFolder gesetzt).
+    ALLOW_DOWNLOAD: getSetting('imgDownload') === 'on' && !imageFolder,
     STRINGS: {
       total: t('total', { km: '{km}' }),
       mapError: t('exportMapError'),

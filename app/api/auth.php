@@ -247,7 +247,9 @@ function register(array $input): void
             ->execute([$newUid, now_iso(), (int) $invite['id']]);
     }
     login_user($newUid);
-    remember_issue($newUid); // „Eingeloggt bleiben" (30 Tage)
+    if (!empty($input['remember'])) {
+        remember_issue($newUid); // „Angemeldet bleiben" (30 Tage) nur auf Wunsch
+    }
     json_out(['ok' => true, 'user' => ['email' => $email], 'csrf' => csrf_token()]);
 }
 
@@ -296,6 +298,7 @@ function login(array $input): void
         tl_session_start();
         session_regenerate_id(true);
         $_SESSION['2fa_pending_uid'] = (int) $user['id'];
+        $_SESSION['2fa_pending_remember'] = !empty($input['remember']);
         json_out(['ok' => true, 'need2fa' => true]);
     }
 
@@ -307,7 +310,9 @@ function login(array $input): void
     }
 
     login_user((int) $user['id']);
-    remember_issue((int) $user['id']); // „Eingeloggt bleiben" (30 Tage)
+    if (!empty($input['remember'])) {
+        remember_issue((int) $user['id']); // „Angemeldet bleiben" (30 Tage) nur auf Wunsch
+    }
     json_out(['ok' => true, 'user' => ['id' => (int) $user['id'], 'email' => $user['email']], 'csrf' => csrf_token()]);
 }
 
@@ -359,9 +364,12 @@ function totp_login(array $input): void
             ->execute([tl_totp_pack($secret), $uid]);
     }
 
-    unset($_SESSION['2fa_pending_uid']);
+    $remember = !empty($_SESSION['2fa_pending_remember']);
+    unset($_SESSION['2fa_pending_uid'], $_SESSION['2fa_pending_remember']);
     login_user($uid);
-    remember_issue($uid); // „Eingeloggt bleiben" (30 Tage)
+    if ($remember) {
+        remember_issue($uid); // „Angemeldet bleiben" (30 Tage) nur auf Wunsch
+    }
     json_out(['ok' => true, 'user' => ['id' => $uid, 'email' => $user['email']],
               'csrf' => csrf_token(), 'usedRecovery' => $okRecovery]);
 }

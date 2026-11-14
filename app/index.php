@@ -69,6 +69,9 @@ $canRegister = $regMode === 'open' || ($regMode === 'invite' && $inviteValid);
       <input id="totpCode" type="text" inputmode="numeric" autocomplete="one-time-code"
              placeholder="123456">
     </div>
+    <label id="rememberRow" style="display:flex;align-items:center;gap:8px;font-weight:normal;margin:6px 0">
+      <input type="checkbox" id="rememberChk"> Angemeldet bleiben
+    </label>
     <button type="submit" id="submitBtn">Anmelden</button>
   </form>
   <div class="switch" id="switchLine">
@@ -100,6 +103,13 @@ const switchLine = document.getElementById('switchLine');
 const switchLink = document.getElementById('switchLink');
 const pwInput = document.getElementById('password');
 const msg = document.getElementById('msg');
+const rememberChk = document.getElementById('rememberChk');
+// In der nativen App standardmäßig angehakt (Komfort). Im Browser bewusst AUS
+// (Opt-in): Das Dauer-Login-Cookie wird nur auf aktiven Wunsch gesetzt — so ist
+// kein Einwilligungs-Banner nötig.
+if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+  rememberChk.checked = true;
+}
 
 function setMode(m) {
   mode = m;
@@ -180,6 +190,7 @@ document.getElementById('authForm').addEventListener('submit', async (e) => {
     const body = awaiting2fa
       ? { code: document.getElementById('totpCode').value.trim(), csrf: CSRF }
       : { email: document.getElementById('email').value, password: pwInput.value, csrf: CSRF,
+          remember: rememberChk.checked,
           invite: (mode === 'register' ? INVITE_TOKEN : undefined) };
     const res = await fetch('api/auth.php?action=' + action, {
       method: 'POST',
@@ -191,6 +202,7 @@ document.getElementById('authForm').addEventListener('submit', async (e) => {
       // Passwort ok, Konto hat 2FA → Code-Eingabe zeigen
       awaiting2fa = true;
       document.getElementById('totpRow').style.display = 'block';
+      document.getElementById('rememberRow').style.display = 'none';
       document.getElementById('email').disabled = true;
       pwInput.disabled = true;
       submitBtn.textContent = 'Code bestätigen';

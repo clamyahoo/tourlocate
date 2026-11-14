@@ -71,19 +71,59 @@ function setupLocateControl(map) {
   btn.innerHTML = LOCATE_SVG;
   btn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:30px;height:30px';
 
+  // Gesamt-Deadline: Wie lange insgesamt gesucht wird, bevor aufgegeben wird
+  // (unabhängig vom timeout je Einzelversuch unten). Vorübergehende Timeouts
+  // laufen bis dahin weiter.
+  const LOCATE_DEADLINE = 45000;
+  let deadlineTimer = null;
+  const clearDeadline = () => {
+    if (deadlineTimer) { clearTimeout(deadlineTimer); deadlineTimer = null; }
+  };
+
+  // „Standort wird ermittelt…" erst nach kurzer Verzögerung einblenden, damit
+  // ein schneller (Cache-)Fix nicht nur kurz aufblitzt.
+  const STATUS_DELAY = 500;
+  let statusTimer = null;
+  const clearStatus = () => {
+    if (statusTimer) { clearTimeout(statusTimer); statusTimer = null; }
+  };
+
   const stop = () => {
     active = false;
     map.stopLocate();
+    clearDeadline();
+    clearStatus();
     btn.style.background = '';
     if (dot) { map.removeLayer(dot); dot = null; }
     if (ring) { map.removeLayer(ring); ring = null; }
+    renderRouteInfo(map); // Pill zurück auf die Routen-Info
   };
 
   const start = () => {
     active = true;
     firstFix = true;
     btn.style.background = '#d2e3f7'; // aktiv hervorheben
-    map.locate({ watch: true, enableHighAccuracy: true, maxZoom: 16 });
+    // Status erst nach STATUS_DELAY zeigen (kein Flackern bei schnellem Fix).
+    clearStatus();
+    statusTimer = setTimeout(() => {
+      if (active && firstFix) document.getElementById('routeinfo').textContent = t('locating');
+    }, STATUS_DELAY);
+    // Gesamt-Deadline: kam bis hierhin kein Fix, aufgeben und ehrlich melden.
+    clearDeadline();
+    deadlineTimer = setTimeout(() => {
+      if (!active) return;
+      stop(); // räumt auf + setzt Pill zurück
+      const ri = document.getElementById('routeinfo');
+      ri.textContent = t('locateTimeout');
+      // Meldung nach ein paar Sekunden von selbst verschwinden lassen,
+      // sofern nicht inzwischen eine neue Suche läuft.
+      setTimeout(() => { if (!active) renderRouteInfo(map); }, 6000);
+    }, LOCATE_DEADLINE);
+    // timeout großzügig: ein kalter GPS-Fix (v. a. in der nativen WebView)
+    // dauert länger als Leaflets 10-s-Standard. maximumAge erlaubt, einen
+    // wenige Sekunden alten Fix sofort zu nutzen, statt stur neu zu messen.
+    map.locate({ watch: true, enableHighAccuracy: true, maxZoom: 16,
+                 timeout: 30000, maximumAge: 10000 });
   };
 
   L.DomEvent.on(btn, 'click', e => {
@@ -106,13 +146,26 @@ function setupLocateControl(map) {
       dot.setLatLng(e.latlng);
       ring.setLatLng(e.latlng).setRadius(e.accuracy);
     }
-    if (firstFix) { map.setView(e.latlng, Math.max(map.getZoom(), 15)); firstFix = false; }
+    if (firstFix) {
+      map.setView(e.latlng, Math.max(map.getZoom(), 15));
+      firstFix = false;
+      clearDeadline();      // geschafft — Gesamt-Timer stoppen
+      clearStatus();        // evtl. noch ausstehenden „wird ermittelt"-Timer abbrechen
+      renderRouteInfo(map); // Pill zurück auf die Routen-Info
+    }
   });
 
-  map.on('locationerror', () => {
+  map.on('locationerror', e => {
     if (!active) return;
-    stop();            // Dauer-watch würde sonst wiederholt Fehler melden
-    alert(t('locateError'));
+    // Nur bei echter Verweigerung der Freigabe (code 1) abbrechen + melden.
+    if (e && e.code === 1 /* PERMISSION_DENIED */) {
+      stop();
+      alert(t('locateError'));
+      return;
+    }
+    // Vorübergehender Fehler (Timeout code 3 / Position noch nicht verfügbar
+    // code 2): den watch NICHT abwürgen — GPS wärmt sich evtl. noch auf und
+    // fängt sich beim nächsten Versuch von selbst. Kein blockierender Dialog.
   });
 
   const ctrl = L.control({ position: 'bottomright' });

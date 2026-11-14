@@ -186,6 +186,20 @@ function tl_migrate(PDO $pdo): void
         );
     SQL);
 
+    // „Eingeloggt bleiben": langlebiges Login-Token (30 Tage). Im Cookie liegt
+    // der Klartext, hier nur dessen SHA-256-Hash (wie bei password_resets).
+    // Beim Abmelden wird die Zeile gelöscht → lokal nichts Verwaistes.
+    $pdo->exec(<<<'SQL'
+        CREATE TABLE IF NOT EXISTS remember_tokens (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            token_hash TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+    SQL);
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_remember_token_hash ON remember_tokens(token_hash)');
+
     // Live-Standort-Teilen: pro Sitzung ein unerratbarer Token (wie
     // share_token), ein öffentlicher Link zeigt die zuletzt gemeldete
     // Position. Bewusst NUR die letzte Position pro Zeile — keine
